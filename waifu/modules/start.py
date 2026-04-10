@@ -281,18 +281,9 @@ async def action_callback(update: Update, context: CallbackContext) -> None:
     await q.answer()
 
     if act == "harem":
-        from waifu.modules.harem import _build_page
-        text, markup, photo = await _build_page(uid, 0)
-        try:
-            if photo:
-                await q.edit_message_caption(caption=text, reply_markup=markup, parse_mode=ParseMode.HTML)
-            else:
-                await q.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
-        except Exception:
-            if photo:
-                await q.message.reply_photo(photo, caption=text, reply_markup=markup, parse_mode=ParseMode.HTML)
-            else:
-                await q.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+        from waifu.modules.harem import send_harem_card
+        await send_harem_card(uid, q)
+        return
 
     elif act == "profile":
         from waifu import user_collection

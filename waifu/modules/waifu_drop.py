@@ -280,12 +280,11 @@ async def guess(update: Update, context: CallbackContext) -> None:
     )
 
     kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton(
-            "📖 My Harem",
-            switch_inline_query_current_chat=f"collection.{user_id}",
-        )
+        InlineKeyboardButton("📖 My Harem", callback_data=f"act:harem"),
+        InlineKeyboardButton("🔍 via Inline", switch_inline_query_current_chat=f"collection.{user_id}"),
     ]])
-    await update.message.reply_text(
+
+    caption = (
         f'🪷 <a href="tg://user?id={user_id}">{escape(u.first_name)}</a>'
         f', ʏᴏᴜ ɢᴏᴛ ᴀ ɴᴇᴡ ᴄʜᴀʀᴀᴄᴛᴇʀ!\n\n'
         f'🫧 Nᴀᴍᴇ: <b>{escape(char["name"])}</b>\n'
@@ -293,10 +292,24 @@ async def guess(update: Update, context: CallbackContext) -> None:
         f'🏖️ Aɴɪᴍᴇ: {escape(char["anime"])} '
         f'(<b>{claimed_now}/{_CLAIM_LIMIT}</b>)\n\n'
         f'Added to your harem! +{_XP_PER_GUESS} XP ✨'
-        f'{sold_out_line}',
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb,
+        f'{sold_out_line}'
     )
+
+    # Send as photo so the character image is visible immediately
+    photo_id = char.get("img_url")
+    if photo_id:
+        await update.message.reply_photo(
+            photo=photo_id,
+            caption=caption,
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb,
+        )
+    else:
+        await update.message.reply_text(
+            caption,
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb,
+        )
 
 
 # ── /fav ──────────────────────────────────────────────────────────────────────

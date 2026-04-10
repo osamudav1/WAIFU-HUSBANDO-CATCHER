@@ -1,18 +1,19 @@
 """
-modules/harem.py — Paginated collection with inline action buttons per character.
+modules/harem.py — Card-view harem: one character photo + info per page.
+
+Navigation:  ⬅️  [n / total]  ➡️
+Each card shows the character's photo with caption containing all info.
 """
 import math
 from html import escape
-from itertools import groupby
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
-from waifu import application, user_collection, waifu_collection
+from waifu import application, user_collection, collection as waifu_collection
 
-_PAGE = 15
 _MEDALS = {
     "⚪ Common":            "⚪",
     "🟣 Rare":              "🟣",
@@ -27,22 +28,28 @@ def _rarity_icon(rarity: str) -> str:
     return _MEDALS.get(rarity, "🎴")
 
 
-async def _anime_totals(animes: list[str]) -> dict[str, int]:
-    pipeline = [
-        {"$match": {"anime": {"$in": animes}}},
-        {"$group": {"_id": "$anime", "n": {"$sum": 1}}},
-    ]
-    return {d["_id"]: d["n"] async for d in waifu_collection.aggregate(pipeline)}
+async def _get_anime_total(anime: str) -> int:
+    return await waifu_collection.count_documents({"anime": anime})
 
 
-async def _build_page(user_id: int, page: int) -> tuple[str, InlineKeyboardMarkup, str | None]:
-    """Returns (text, keyboard, photo_url)."""
+async def _build_card(user_id: int, idx: int) -> tuple[str, InlineKeyboardMarkup, str | None, int]:
+    """
+    Returns (caption, keyboard, photo_file_id, total_chars).
+    idx is the 0-based position in the user's unique character list.
+    """
     user = await user_collection.find_one({"id": user_id})
     if not user or not user.get("characters"):
-        return "📭 Your harem is empty — go catch some characters!", InlineKeyboardMarkup([]), None
+        return (
+            "📭 Harem မှာ character မရှိသေးဘူး — character တစ်ကောင် ဖမ်းပေး!",
+            InlineKeyboardMarkup([]),
+            None,
+            0,
+        )
 
-    chars = user["characters"]
-    # Deduplicate keeping all counts
+    chars      = user["characters"]
+    fav_id     = (user.get("favorites") or [None])[0]
+
+    # Deduplicate — keep all occurrences for count
     id_counts: dict[str, int] = {}
     for c in chars:
         id_counts[c["id"]] = id_counts.get(c["id"], 0) + 1
@@ -50,109 +57,178 @@ async def _build_page(user_id: int, page: int) -> tuple[str, InlineKeyboardMarku
     unique: list[dict] = list({c["id"]: c for c in chars}.values())
     unique.sort(key=lambda x: (x["anime"], x["id"]))
 
-    total_unique = len(unique)
-    total_pages  = max(1, math.ceil(total_unique / _PAGE))
-    page = max(0, min(page, total_pages - 1))
+    total = len(unique)
+    if total == 0:
+        return (
+            "📭 Harem မှာ character မရှိသေးဘူး!",
+            InlineKeyboardMarkup([]),
+            None,
+            0,
+        )
 
-    page_chars  = unique[page * _PAGE:(page + 1) * _PAGE]
-    animes      = list({c["anime"] for c in page_chars})
-    db_totals   = await _anime_totals(animes)
+    idx = max(0, min(idx, total - 1))
+    c   = unique[idx]
 
-    # Header
-    fav_id = (user.get("favorites") or [None])[0]
-    lines  = [
-        f"<b>🌸 {escape(user.get('first_name', 'User'))}'s Harem</b>",
-        f"📦 {total_unique} unique  |  🗂 {len(chars)} total  |  "
-        f"💰 {user.get('coins', 0):,} coins",
-        f"Page {page+1}/{total_pages}\n",
-    ]
+    # Stats
+    cnt       = id_counts.get(c["id"], 1)
+    dup_line  = f"  ×{cnt} copies" if cnt > 1 else ""
+    fav_mark  = " ⭐" if c["id"] == fav_id else ""
+    rar_icon  = _rarity_icon(c.get("rarity", ""))
+    anime_tot = await _get_anime_total(c["anime"])
+    user_anime_cnt = sum(
+        1 for x in chars if x["anime"] == c["anime"]
+    )
 
-    # Group by anime
-    sorted_page = sorted(page_chars, key=lambda x: x["anime"])
-    for anime, group_iter in groupby(sorted_page, key=lambda x: x["anime"]):
-        group_list = list(group_iter)
-        db_total   = db_totals.get(anime, "?")
-        lines.append(f"\n<b>{escape(anime)}  {len(group_list)}/{db_total}</b>")
-        for c in group_list:
-            icon  = _rarity_icon(c.get("rarity", ""))
-            cnt   = id_counts.get(c["id"], 1)
-            dup   = f" ×{cnt}" if cnt > 1 else ""
-            fav   = " ⭐" if c["id"] == fav_id else ""
-            lines.append(f"  {icon} <code>{c['id']}</code> {escape(c['name'])}{dup}{fav}")
+    caption = (
+        f"🌸 <b>{escape(c['name'])}</b>{fav_mark}{dup_line}\n\n"
+        f"📺 Aɴɪᴍᴇ: {escape(c['anime'])}  ({user_anime_cnt}/{anime_tot})\n"
+        f"{rar_icon} Rᴀʀɪᴛʏ: {c.get('rarity', '?')}\n"
+        f"🆔 ID: <code>{c['id']}</code>\n\n"
+        f"📦 {total} characters  |  💰 {user.get('coins', 0):,} coins"
+    )
 
-    text = "\n".join(lines)
-
-    # Keyboard: collection link + navigation + quick-action for fav char
-    kb: list[list] = []
-    kb.append([InlineKeyboardButton(
-        f"🔍 Browse Collection ({len(chars)})",
-        switch_inline_query_current_chat=f"collection.{user_id}",
-    )])
+    # Navigation keyboard
     nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton("⬅️", callback_data=f"harem:{page-1}:{user_id}"))
-    nav.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="noop"))
-    if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("➡️", callback_data=f"harem:{page+1}:{user_id}"))
-    if len(nav) > 1:
-        kb.append(nav)
+    if idx > 0:
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"harem:{idx-1}:{user_id}"))
+    nav.append(InlineKeyboardButton(f"{idx+1} / {total}", callback_data="noop"))
+    if idx < total - 1:
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"harem:{idx+1}:{user_id}"))
 
-    markup = InlineKeyboardMarkup(kb)
+    kb = [
+        nav,
+        [InlineKeyboardButton(
+            "🔍 Search Collection",
+            switch_inline_query_current_chat=f"collection.{user_id}",
+        )],
+    ]
+    markup   = InlineKeyboardMarkup(kb)
+    photo_id = c.get("img_url")
 
-    # Stable photo: fav > first unique
-    photo: str | None = None
-    if fav_id:
-        fav_char = next((c for c in chars if c["id"] == fav_id), None)
-        photo    = (fav_char or {}).get("img_url")
-    if not photo and page_chars:
-        photo = page_chars[0].get("img_url")
-
-    return text, markup, photo
+    return caption, markup, photo_id, total
 
 
-async def _reply_harem(update: Update, text: str,
-                       markup: InlineKeyboardMarkup, photo: str | None) -> None:
-    is_cb = bool(update.callback_query)
-    if not is_cb:
-        if photo:
-            await update.message.reply_photo(
-                photo, caption=text, parse_mode=ParseMode.HTML, reply_markup=markup)
+# ── /harem command ────────────────────────────────────────────────────────────
+
+async def harem(update: Update, context: CallbackContext, idx: int = 0) -> None:
+    user_id           = update.effective_user.id
+    caption, markup, photo, total = await _build_card(user_id, idx)
+
+    if total == 0:
+        if update.callback_query:
+            await update.callback_query.answer()
+            await update.callback_query.edit_message_text(caption, parse_mode=ParseMode.HTML)
         else:
-            await update.message.reply_text(
-                text, parse_mode=ParseMode.HTML, reply_markup=markup)
+            await update.message.reply_text(caption, parse_mode=ParseMode.HTML)
         return
 
-    try:
-        if photo:
-            await update.callback_query.edit_message_caption(
-                caption=text, parse_mode=ParseMode.HTML, reply_markup=markup)
-        else:
-            await update.callback_query.edit_message_text(
-                text, parse_mode=ParseMode.HTML, reply_markup=markup)
-    except BadRequest as e:
-        if "not modified" not in str(e).lower():
-            raise
+    if update.callback_query:
+        return  # handled by harem_callback
+
+    # Command invocation — send new photo card
+    if photo:
+        await update.message.reply_photo(
+            photo=photo,
+            caption=caption,
+            parse_mode=ParseMode.HTML,
+            reply_markup=markup,
+        )
+    else:
+        await update.message.reply_text(
+            caption,
+            parse_mode=ParseMode.HTML,
+            reply_markup=markup,
+        )
 
 
-async def harem(update: Update, context: CallbackContext, page: int = 0) -> None:
-    user_id = update.effective_user.id
-    text, markup, photo = await _build_page(user_id, page)
-    await _reply_harem(update, text, markup, photo)
-
+# ── Inline / callback navigation ──────────────────────────────────────────────
 
 async def harem_callback(update: Update, context: CallbackContext) -> None:
     q = update.callback_query
     await q.answer()
-    _, page_str, uid_str = q.data.split(":")
-    if q.from_user.id != int(uid_str):
-        await q.answer("❌ That's not your harem!", show_alert=True)
+
+    parts = q.data.split(":")
+    idx      = int(parts[1])
+    uid      = int(parts[2])
+
+    if q.from_user.id != uid:
+        await q.answer("❌ မင်းရဲ့ harem မဟုတ်ဘူး!", show_alert=True)
         return
-    await harem(update, context, page=int(page_str))
+
+    caption, markup, photo, total = await _build_card(uid, idx)
+
+    if total == 0:
+        try:
+            await q.edit_message_caption(caption=caption, parse_mode=ParseMode.HTML)
+        except Exception:
+            await q.edit_message_text(caption, parse_mode=ParseMode.HTML)
+        return
+
+    if photo:
+        try:
+            # Try to update photo + caption together
+            await q.edit_message_media(
+                media=InputMediaPhoto(
+                    media=photo,
+                    caption=caption,
+                    parse_mode=ParseMode.HTML,
+                ),
+                reply_markup=markup,
+            )
+        except BadRequest as e:
+            if "not modified" in str(e).lower():
+                return
+            # Fallback: just update caption if media edit fails
+            try:
+                await q.edit_message_caption(
+                    caption=caption,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=markup,
+                )
+            except Exception:
+                pass
+    else:
+        try:
+            await q.edit_message_text(
+                caption,
+                parse_mode=ParseMode.HTML,
+                reply_markup=markup,
+            )
+        except BadRequest as e:
+            if "not modified" not in str(e).lower():
+                raise
+
+
+# ── Quick harem for action_callback (from start/guess buttons) ────────────────
+
+async def send_harem_card(user_id: int, query) -> None:
+    """Send harem as a new photo card (used from other modules' callbacks)."""
+    caption, markup, photo, total = await _build_card(user_id, 0)
+
+    if total == 0:
+        await query.answer(caption, show_alert=True)
+        return
+
+    if photo:
+        await query.message.reply_photo(
+            photo=photo,
+            caption=caption,
+            parse_mode=ParseMode.HTML,
+            reply_markup=markup,
+        )
+    else:
+        await query.message.reply_text(
+            caption,
+            parse_mode=ParseMode.HTML,
+            reply_markup=markup,
+        )
 
 
 async def noop(update: Update, context: CallbackContext) -> None:
     await update.callback_query.answer()
 
+
+# ── Register handlers ─────────────────────────────────────────────────────────
 
 application.add_handler(CommandHandler(["harem", "collection"], harem, block=False))
 application.add_handler(CallbackQueryHandler(harem_callback, pattern=r"^harem:\d+:\d+$", block=False))
