@@ -27,3 +27,7 @@ args = "python -m waifu"
 
 [workflows.workflow.metadata]
 outputType = "console"
+
+[deployment]
+deploymentTarget = "vm"
+run = ["python", "-m", "waifu"]
