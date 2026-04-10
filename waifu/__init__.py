@@ -50,6 +50,7 @@ top_global_groups_collection = db["top_groups"]
 pm_users                     = db["pm_users"]
 market_collection            = db["market_listings"]
 active_drops_collection      = db["active_drops"]
+bot_settings_collection      = db["bot_settings"]
 waifu_collection             = collection
 
 from telegram.ext import Application
@@ -93,5 +94,6 @@ __all__ = [
     "GROUP_ID", "CHARA_CHANNEL_ID", "PHOTO_URL", "SUPPORT_CHAT", "UPDATE_CHAT",
     "collection", "user_collection", "user_totals_collection",
     "group_user_totals_collection", "top_global_groups_collection",
-    "pm_users", "market_collection", "active_drops_collection", "waifu_collection",
+    "pm_users", "market_collection", "active_drops_collection",
+    "bot_settings_collection", "waifu_collection",
 ]

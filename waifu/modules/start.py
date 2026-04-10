@@ -1,19 +1,44 @@
-import random
 from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
-from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
+from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
-from waifu import application, BOT_USERNAME, GROUP_ID, PHOTO_URL, SUPPORT_CHAT, UPDATE_CHAT, OWNER_ID
+from waifu import (
+    application, BOT_USERNAME, GROUP_ID, PHOTO_URL,
+    SUPPORT_CHAT, UPDATE_CHAT, OWNER_ID,
+    bot_settings_collection,
+)
 from waifu import pm_users as _pm
 
 WELCOME = (
-    "👋 <b>Welcome to Waifu Catcher!</b>\n\n"
-    "I drop random anime characters in groups.\n"
-    "Use <code>/guess</code> to claim them and build your harem!\n\n"
-    "📌 Add me to a group to start collecting!"
+    "👋\n\n"
+    "<blockquote>I drop random anime characters in groups.\n"
+    "Use /guess to claim them and build your harem!</blockquote>"
 )
+
+# ── Welcome photo rotation ────────────────────────────────────────────────────
+
+_photo_idx: int = 0   # global rotation cursor
+
+
+async def _get_welcome_photos() -> list[str]:
+    """Return list of photo file_ids from DB, fallback to env PHOTO_URL."""
+    doc = await bot_settings_collection.find_one({"_id": "welcome_photos"})
+    if doc and doc.get("photos"):
+        return doc["photos"]
+    return list(PHOTO_URL)   # fallback
+
+
+async def _next_photo() -> str | None:
+    """Return next photo in rotation (cyclic), or None if list is empty."""
+    global _photo_idx
+    photos = await _get_welcome_photos()
+    if not photos:
+        return None
+    photo = photos[_photo_idx % len(photos)]
+    _photo_idx = (_photo_idx + 1) % len(photos)
+    return photo
 
 # ── Help sections ──────────────────────────────────────────────────────────────
 
@@ -134,6 +159,7 @@ def _owner_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton("👤 Sudo Users",     callback_data="owner:sudo"),
         ],
         [
+            InlineKeyboardButton("🖼 Welcome Photos", callback_data="owner:welcomephotos"),
             InlineKeyboardButton("📊 Bot Stats",      callback_data="owner:stats"),
         ],
     ]
@@ -185,7 +211,7 @@ async def start(update: Update, context: CallbackContext) -> None:
         if patch:
             await _pm.update_one({"_id": u.id}, {"$set": patch})
 
-    photo      = random.choice(PHOTO_URL) if PHOTO_URL else None
+    photo      = await _next_photo()
     is_pm      = update.effective_chat.type == "private"
     is_owner   = u.id == OWNER_ID
 
@@ -337,6 +363,12 @@ OWNER_CMD_INFO = {
     "update":    ("🔧 <b>Update Character</b>\n\n<code>/update [ID] [field] [value]</code>\nFields: name, anime, rarity, img_url",),
     "sudo":      ("👤 <b>Sudo Users</b>\n\n<code>/addsudo [user_id]</code>\n<code>/removesudo [user_id]</code>",),
     "stats":     ("📊 <b>Bot Stats</b>\n\n<code>/stats</code> ရိုက်ပေး",),
+    "welcomephotos": (
+        "🖼 <b>Welcome Photos</b>\n\n"
+        "ပုံ ထည့်ရန်:\nBot PM ထဲမှာ ပုံ ပို့ပြီး <code>/addwelcomephoto</code> reply လုပ်ပေး\n\n"
+        "ပုံ စာရင်းကြည့်ရန်:\n<code>/welcomephotos</code>\n\n"
+        "ပုံ ဖျက်ရန်:\n<code>/removewelcomephoto &lt;number&gt;</code>",
+    ),
 }
 
 
@@ -380,9 +412,92 @@ async def owner_callback(update: Update, context: CallbackContext) -> None:
         await q.answer("⚠️ Unknown action", show_alert=True)
 
 
+# ── Welcome photo management commands (owner only) ────────────────────────────
+
+async def addwelcomephoto(update: Update, context: CallbackContext) -> None:
+    if update.effective_user.id != OWNER_ID:
+        return
+    msg = update.message
+
+    # Support replying to a photo OR sending a photo with the command as caption
+    target = msg.reply_to_message if msg.reply_to_message else msg
+    photo  = (target.photo[-1].file_id if target.photo
+              else (target.document.file_id if target.document and
+                    target.document.mime_type and
+                    target.document.mime_type.startswith("image") else None))
+
+    if not photo:
+        await msg.reply_text(
+            "❌ ပုံ bot PM ထဲ ပို့ပြီး ထိုပုံကို reply လုပ်ကာ /addwelcomephoto ရိုက်ပေး"
+        )
+        return
+
+    doc = await bot_settings_collection.find_one({"_id": "welcome_photos"}) or {}
+    photos = doc.get("photos", [])
+    if photo in photos:
+        await msg.reply_text("⚠️ ဒီပုံ ရှိပြီးသားပဲ")
+        return
+
+    photos.append(photo)
+    await bot_settings_collection.update_one(
+        {"_id": "welcome_photos"},
+        {"$set": {"photos": photos}},
+        upsert=True,
+    )
+    await msg.reply_text(
+        f"✅ Welcome ပုံ ထည့်ပြီ!\n🖼 စုစုပေါင်း: <b>{len(photos)}</b> ပုံ",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def listwelcomephotos(update: Update, context: CallbackContext) -> None:
+    if update.effective_user.id != OWNER_ID:
+        return
+    photos = await _get_welcome_photos()
+    if not photos:
+        await update.message.reply_text("📭 Welcome ပုံ မရှိသေးဘူး")
+        return
+    lines = [f"{i+1}. <code>{p[:30]}…</code>" for i, p in enumerate(photos)]
+    await update.message.reply_text(
+        f"🖼 <b>Welcome Photos ({len(photos)} ပုံ)</b>\n\n" + "\n".join(lines) +
+        "\n\nဖျက်ရန်: /removewelcomephoto &lt;number&gt;",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def removewelcomephoto(update: Update, context: CallbackContext) -> None:
+    if update.effective_user.id != OWNER_ID:
+        return
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text("Usage: /removewelcomephoto <number>")
+        return
+
+    n = int(context.args[0]) - 1
+    doc = await bot_settings_collection.find_one({"_id": "welcome_photos"}) or {}
+    photos = doc.get("photos", [])
+
+    if n < 0 or n >= len(photos):
+        await update.message.reply_text(f"❌ {n+1} မဟုတ်တဲ့ နံပါတ် — 1–{len(photos)} ထဲကရွေး")
+        return
+
+    removed = photos.pop(n)
+    await bot_settings_collection.update_one(
+        {"_id": "welcome_photos"},
+        {"$set": {"photos": photos}},
+        upsert=True,
+    )
+    await update.message.reply_text(
+        f"🗑 ပုံ {n+1} ဖျက်ပြီ!\n🖼 ကျန်: <b>{len(photos)}</b> ပုံ",
+        parse_mode=ParseMode.HTML,
+    )
+
+
 # ── Register handlers ─────────────────────────────────────────────────────────
 
-application.add_handler(CommandHandler("start", start, block=False))
-application.add_handler(CallbackQueryHandler(button,          pattern=r"^help:",  block=False))
-application.add_handler(CallbackQueryHandler(action_callback, pattern=r"^act:",   block=False))
-application.add_handler(CallbackQueryHandler(owner_callback,  pattern=r"^owner:", block=False))
+application.add_handler(CommandHandler("start",                start,               block=False))
+application.add_handler(CommandHandler("addwelcomephoto",      addwelcomephoto,     block=False))
+application.add_handler(CommandHandler("welcomephotos",        listwelcomephotos,   block=False))
+application.add_handler(CommandHandler("removewelcomephoto",   removewelcomephoto,  block=False))
+application.add_handler(CallbackQueryHandler(button,          pattern=r"^help:",   block=False))
+application.add_handler(CallbackQueryHandler(action_callback, pattern=r"^act:",    block=False))
+application.add_handler(CallbackQueryHandler(owner_callback,  pattern=r"^owner:",  block=False))
