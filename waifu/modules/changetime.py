@@ -2,14 +2,18 @@ from pymongo import ReturnDocument
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import CommandHandler, CallbackContext
-from waifu import application, user_totals_collection
+from waifu import application, user_totals_collection, sudo_users, OWNER_ID
 from waifu.config import Config
 
 _MIN, _MAX = 30, 10_000
 
 
 async def _is_admin(update: Update, context: CallbackContext) -> bool:
-    m = await context.bot.get_chat_member(update.effective_chat.id, update.effective_user.id)
+    uid = update.effective_user.id
+    # Owner and sudo users always pass
+    if uid == OWNER_ID or uid in sudo_users:
+        return True
+    m = await context.bot.get_chat_member(update.effective_chat.id, uid)
     return m.status in ("administrator", "creator")
 
 
