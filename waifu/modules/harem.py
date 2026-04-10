@@ -95,13 +95,7 @@ async def _build_card(user_id: int, idx: int) -> tuple[str, InlineKeyboardMarkup
     if idx < total - 1:
         nav.append(InlineKeyboardButton("➡️", callback_data=f"harem:{idx+1}:{user_id}"))
 
-    kb = [
-        nav,
-        [InlineKeyboardButton(
-            "🔍 Search Collection",
-            switch_inline_query_current_chat=f"collection.{user_id}",
-        )],
-    ]
+    kb = [nav]
     markup   = InlineKeyboardMarkup(kb)
     photo_id = c.get("img_url")
 

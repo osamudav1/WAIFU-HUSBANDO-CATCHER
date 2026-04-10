@@ -54,21 +54,6 @@ SECTIONS = {
         "/ping — Latency + uptime (sudo)\n"
         "/forcedrop — Instant drop (owner/sudo)"
     ),
-    "upload": (
-        "📤 <b>Upload Commands</b> (sudo only)\n\n"
-        "/upload [file_id or URL] [name] [anime] [rarity]\n"
-        "/uploadchar — Reply to image with caption\n"
-        "/delete [id] — Remove a character\n"
-        "/update [id] [field] [value] — Edit a character\n\n"
-        "<b>Rarity numbers:</b>\n"
-        "1 → ⚪ Common\n"
-        "2 → 🟣 Rare\n"
-        "3 → 🟡 Legendary\n"
-        "4 → 🔮 Mythical\n"
-        "5 → 💮 Special Edition\n"
-        "6 → 🌌 Universal Limited\n\n"
-        "💡 <b>Tip:</b> Send any photo to me in PM to get its file_id!"
-    ),
 }
 
 SECTION_LABELS = {
@@ -77,7 +62,6 @@ SECTION_LABELS = {
     "social":      "⚔️ Social",
     "leaderboard": "📊 Leaderboard",
     "settings":    "⚙️ Settings",
-    "upload":      "📤 Upload",
 }
 
 
@@ -90,12 +74,8 @@ def _main_kb() -> InlineKeyboardMarkup:
         ],
         # Quick actions
         [
-            InlineKeyboardButton("📚 My Harem",   callback_data="act:harem"),
-            InlineKeyboardButton("👤 Profile",    callback_data="act:profile"),
-        ],
-        [
-            InlineKeyboardButton("🎁 Daily",      callback_data="act:daily"),
-            InlineKeyboardButton("💰 Balance",    callback_data="act:balance"),
+            InlineKeyboardButton("📚 My Harem", callback_data="act:harem"),
+            InlineKeyboardButton("👤 Profile",  callback_data="act:profile"),
         ],
         # Help sections
         [
@@ -108,7 +88,6 @@ def _main_kb() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("⚙️ Settings", callback_data="help:settings"),
-            InlineKeyboardButton("📤 Upload",   callback_data="help:upload"),
         ],
     ]
     return InlineKeyboardMarkup(rows)
@@ -124,12 +103,12 @@ def _owner_kb() -> InlineKeyboardMarkup:
         ],
         # Quick actions
         [
-            InlineKeyboardButton("📚 My Harem",   callback_data="act:harem"),
-            InlineKeyboardButton("👤 Profile",    callback_data="act:profile"),
+            InlineKeyboardButton("📚 My Harem", callback_data="act:harem"),
+            InlineKeyboardButton("👤 Profile",  callback_data="act:profile"),
         ],
         [
-            InlineKeyboardButton("🎁 Daily",      callback_data="act:daily"),
-            InlineKeyboardButton("💰 Balance",    callback_data="act:balance"),
+            InlineKeyboardButton("🎁 Daily",    callback_data="act:daily"),
+            InlineKeyboardButton("💰 Balance",  callback_data="act:balance"),
         ],
         # Help sections
         [
@@ -142,7 +121,6 @@ def _owner_kb() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("⚙️ Settings", callback_data="help:settings"),
-            InlineKeyboardButton("📤 Upload",   callback_data="help:upload"),
         ],
         # ── Owner Panel ──────────────────────────────────
         [InlineKeyboardButton("👑 ─── Owner Panel ─── 👑", callback_data="owner:noop")],
