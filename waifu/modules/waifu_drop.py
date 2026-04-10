@@ -46,9 +46,9 @@ _registered_chats: set[int]            = set()
 
 scheduler = AsyncIOScheduler(timezone="UTC")
 
-# XP reward & max claimers per drop
+# XP reward. Per-drop: 1 person can claim (global limit per character is set in DB)
 _XP_PER_GUESS  = 50
-_CLAIM_LIMIT   = 10   # max users who can claim one drop
+_DEFAULT_LIMIT = 10   # fallback global limit if character has no limit field
 
 
 # ── Rarity helper ─────────────────────────────────────────────────────────────
@@ -84,18 +84,27 @@ async def _send_drop(chat_id: int, bot) -> None:
         LOGGER.debug("No characters in DB — skipping drop for chat %s", chat_id)
         return
 
-    window = _rolling_window_size(len(all_chars))
+    # Filter out sold-out characters (global claimed_count >= limit)
+    available = [
+        c for c in all_chars
+        if c.get("claimed_count", 0) < c.get("limit", _DEFAULT_LIMIT)
+    ]
+    if not available:
+        LOGGER.info("All characters sold out in chat %s — skipping drop", chat_id)
+        return
+
+    window = _rolling_window_size(len(available))
     sent   = _sent_ids.get(chat_id, [])
 
     # Characters not in the rolling window
-    unsent = [c for c in all_chars if c["id"] not in sent]
+    unsent = [c for c in available if c["id"] not in sent]
 
     # If every character has been seen recently, clear the window and start fresh
     if not unsent:
         _sent_ids[chat_id] = []
-        unsent = all_chars
+        unsent = available
         LOGGER.debug("Sent-IDs window cleared for chat %s (all %d chars seen)",
-                     chat_id, len(all_chars))
+                     chat_id, len(available))
 
     char = random.choice(unsent)
 
@@ -200,20 +209,23 @@ async def guess(update: Update, context: CallbackContext) -> None:
 
     claimers = _claimers.setdefault(chat_id, set())
 
-    # Limit already reached — sold out
-    if len(claimers) >= _CLAIM_LIMIT:
-        await update.message.reply_text(
-            f"🚫 <b>{_CLAIM_LIMIT}/{_CLAIM_LIMIT} Sold Out!</b>\n"
-            f"Character ကို လူ {_CLAIM_LIMIT} ယောက် claim ပြီးပြီ။\n"
-            f"နောက် drop ကို စောင့်ပေး!",
-            parse_mode=ParseMode.HTML,
-        )
+    # Per-drop: only 1 person can claim each drop session
+    if len(claimers) >= 1:
+        already_claimed = update.effective_user.id in claimers
+        if already_claimed:
+            await update.message.reply_text(
+                "✅ မင်း ဒီ drop ကို ရပြီးပြီ! နောက် drop ကို စောင့်ပေး။"
+            )
+        else:
+            await update.message.reply_text(
+                "❌ တစ်ယောက်ပြီးယူသွားပြီ! နောက် drop ကို စောင့်ပေး!"
+            )
         return
 
-    # This user already claimed this drop
+    # This user already claimed this drop (safety check)
     if user_id in claimers:
         await update.message.reply_text(
-            "✅ မင်း ဒီ character ကို ရပြီးပြီ! နောက် drop ကို စောင့်ပေး။"
+            "✅ မင်း ဒီ drop ကို ရပြီးပြီ! နောက် drop ကို စောင့်ပေး။"
         )
         return
 
@@ -240,11 +252,19 @@ async def guess(update: Update, context: CallbackContext) -> None:
 
     # ── Correct guess ─────────────────────────────────────────────────────────
     claimers.add(user_id)
-    claimed_now = len(claimers)
 
-    # Clear active drop only when limit is reached
-    if claimed_now >= _CLAIM_LIMIT:
-        _active_char.pop(chat_id, None)
+    # Clear active drop (only 1 claimer per session)
+    _active_char.pop(chat_id, None)
+
+    # ── Increment global claimed_count in collection DB ────────────────────────
+    char_global_limit   = char.get("limit", _DEFAULT_LIMIT)
+    char_prev_claimed   = char.get("claimed_count", 0)
+    char_new_claimed    = char_prev_claimed + 1
+
+    await collection.update_one(
+        {"id": char["id"]},
+        {"$inc": {"claimed_count": 1}},
+    )
 
     # ── Persist to user document ───────────────────────────────────────────────
     await user_collection.update_one(
@@ -272,11 +292,12 @@ async def guess(update: Update, context: CallbackContext) -> None:
         upsert=True,
     )
 
-    # ── Success reply (new format) ─────────────────────────────────────────────
+    # ── Success reply ─────────────────────────────────────────────────────────
     rar_emoji, rar_name = _split_rarity(char["rarity"])
+    is_sold_out = char_new_claimed >= char_global_limit
     sold_out_line = (
-        f"\n🚫 <b>{_CLAIM_LIMIT}/{_CLAIM_LIMIT} Sold Out!</b>"
-        if claimed_now >= _CLAIM_LIMIT else ""
+        f"\n🚫 <b>Sold Out! ({char_new_claimed}/{char_global_limit})</b>"
+        if is_sold_out else ""
     )
 
     kb = InlineKeyboardMarkup([[
@@ -290,7 +311,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
         f'🫧 Nᴀᴍᴇ: <b>{escape(char["name"])}</b>\n'
         f'{rar_emoji} 𝙍𝘼𝙍𝙄𝙏𝙔: {rar_name}\n'
         f'🏖️ Aɴɪᴍᴇ: {escape(char["anime"])} '
-        f'(<b>{claimed_now}/{_CLAIM_LIMIT}</b>)\n\n'
+        f'(<b>{char_new_claimed}/{char_global_limit}</b>)\n\n'
         f'Added to your harem! +{_XP_PER_GUESS} XP ✨'
         f'{sold_out_line}'
     )

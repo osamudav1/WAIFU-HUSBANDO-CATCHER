@@ -28,7 +28,7 @@ RARITY_MAP  = Config.RARITY_MAP
 RARITY_STRS = {v.lower(): v for v in RARITY_MAP.values()}
 
 # Conversation states
-WAIT_PHOTO, WAIT_NAME, WAIT_ANIME, WAIT_RARITY = range(4)
+WAIT_PHOTO, WAIT_NAME, WAIT_ANIME, WAIT_RARITY, WAIT_LIMIT = range(5)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -144,7 +144,7 @@ async def step_anime(update: Update, context: CallbackContext) -> int:
     anime = text.replace("-", " ").title()
     context.user_data['anime'] = anime
     await update.message.reply_text(
-        f"✅ <b>Step 4/4 — Rarity</b>\n\n"
+        f"✅ <b>Step 4/5 — Rarity</b>\n\n"
         f"Name: <b>{context.user_data['name']}</b>\n"
         f"Anime: <b>{anime}</b>\n\n"
         f"Rarity ရွေးပေး 👇",
@@ -155,7 +155,7 @@ async def step_anime(update: Update, context: CallbackContext) -> int:
 
 
 async def step_rarity(update: Update, context: CallbackContext) -> int:
-    """Receive rarity button → save directly to DB."""
+    """Receive rarity button → ask for limit."""
     q = update.callback_query
     await q.answer()
 
@@ -171,39 +171,75 @@ async def step_rarity(update: Update, context: CallbackContext) -> int:
         await q.answer("❌ မမှန်ဘူး", show_alert=True)
         return WAIT_RARITY
 
-    photo = context.user_data.get('photo')
-    name  = context.user_data.get('name')
-    anime = context.user_data.get('anime')
-
-    if not all([photo, name, anime]):
+    if not all([context.user_data.get('photo'),
+                context.user_data.get('name'),
+                context.user_data.get('anime')]):
         await q.edit_message_text("❌ Session ကုန်သွားတယ်။ /upload ထပ်ကြိုးစား")
         context.user_data.clear()
         return ConversationHandler.END
 
+    context.user_data['rarity'] = rarity
+    name  = context.user_data['name']
+    anime = context.user_data['anime']
+
+    await q.edit_message_text(
+        f"✅ <b>Step 5/5 — Limit (copies)</b>\n\n"
+        f"Name: <b>{name}</b>\n"
+        f"Anime: <b>{anime}</b>\n"
+        f"Rarity: <b>{rarity}</b>\n\n"
+        f"🔢 Character ဘယ်နှစ်ကောင် claim လုပ်ခွင့်ပြုမလဲ?\n"
+        f"<i>ကြိုက်သလောက် ဂဏန်း ရိုက်ထည့်ပေး (ဥပမာ: 5, 10, 50 ...)</i>\n\n"
+        f"❌ ပယ်ဖျက်ရန် /cancel",
+        parse_mode=ParseMode.HTML,
+    )
+    return WAIT_LIMIT
+
+
+async def step_limit(update: Update, context: CallbackContext) -> int:
+    """Receive limit number → save to DB."""
+    text = update.message.text.strip()
+
+    if not text.isdigit() or int(text) < 1:
+        await update.message.reply_text(
+            "❌ 1 အထက် ဂဏန်းတစ်ခု ရိုက်ထည့်ပေး (ဥပမာ: 10)")
+        return WAIT_LIMIT
+
+    limit = int(text)
+    photo = context.user_data.get('photo')
+    name  = context.user_data.get('name')
+    anime = context.user_data.get('anime')
+    rarity= context.user_data.get('rarity')
+
+    if not all([photo, name, anime, rarity]):
+        await update.message.reply_text("❌ Session ကုန်သွားတယ်။ /upload ထပ်ကြိုးစား")
+        context.user_data.clear()
+        return ConversationHandler.END
+
     char_id = await _next_id()
-    char    = {
-        "img_url": photo,
-        "name":    name,
-        "anime":   anime,
-        "rarity":  rarity,
-        "id":      char_id,
+    char = {
+        "img_url":       photo,
+        "name":          name,
+        "anime":         anime,
+        "rarity":        rarity,
+        "id":            char_id,
+        "limit":         limit,
+        "claimed_count": 0,
     }
 
     try:
         await collection.insert_one(char)
-        await q.edit_message_text(
+        await update.message.reply_text(
             f"🎉 <b>Upload ပြီးပြီ!</b>\n\n"
             f"🌸 <b>{name}</b>\n"
             f"📺 {anime}\n"
             f"💎 {rarity}\n"
+            f"🔢 Limit: <b>{limit} copies</b>\n"
             f"🆔 ID: <code>{char_id}</code>",
             parse_mode=ParseMode.HTML,
         )
     except Exception as e:
-        await q.edit_message_text(
-            f"❌ DB သိမ်းမရဘူး: {e}",
-            parse_mode=ParseMode.HTML,
-        )
+        await update.message.reply_text(
+            f"❌ DB သိမ်းမရဘူး: {e}", parse_mode=ParseMode.HTML)
 
     context.user_data.clear()
     return ConversationHandler.END
@@ -342,7 +378,7 @@ async def delete(update: Update, context: CallbackContext) -> None:
 
 # ── /update ───────────────────────────────────────────────────────────────────
 
-_VALID = {"img_url", "name", "anime", "rarity"}
+_VALID = {"img_url", "name", "anime", "rarity", "limit", "claimed_count"}
 
 
 async def update_char(upd: Update, context: CallbackContext) -> None:
@@ -375,6 +411,11 @@ async def update_char(upd: Update, context: CallbackContext) -> None:
         except (KeyError, ValueError):
             await upd.message.reply_text(f"❌ Rarity မမှန်ဘူး — 1–{len(RARITY_MAP)} သုံး")
             return
+    elif field in ("limit", "claimed_count"):
+        if not raw.isdigit() or int(raw) < 0:
+            await upd.message.reply_text("❌ ဂဏန်းသာ ထည့်ပေး (0 နဲ့ အထက်)")
+            return
+        new_val = int(raw)
     else:
         new_val = raw
 
@@ -397,6 +438,7 @@ _upload_conv = ConversationHandler(
         WAIT_NAME:   [MessageHandler(filters.TEXT & ~filters.COMMAND, step_name)],
         WAIT_ANIME:  [MessageHandler(filters.TEXT & ~filters.COMMAND, step_anime)],
         WAIT_RARITY: [CallbackQueryHandler(step_rarity, pattern=r"^rar:")],
+        WAIT_LIMIT:  [MessageHandler(filters.TEXT & ~filters.COMMAND, step_limit)],
     },
     fallbacks=[CommandHandler("cancel", cancel)],
     allow_reentry=True,
