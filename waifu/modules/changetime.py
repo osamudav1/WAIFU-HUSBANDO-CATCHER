@@ -5,7 +5,7 @@ from telegram.ext import CommandHandler, CallbackContext
 from waifu import application, user_totals_collection, sudo_users, OWNER_ID
 from waifu.config import Config
 
-_MIN, _MAX = 30, 10_000
+_MIN, _MAX = 3, 10_000
 
 
 async def _is_admin(update: Update, context: CallbackContext) -> bool:
