@@ -349,11 +349,17 @@ async def guess(update: Update, context: CallbackContext) -> None:
     new_xp    = old_xp + xp_earned
     new_level = _calc_level(new_xp)[0]
 
+    _LEVEL_UP_COINS = 200
     if new_level > old_level:
         mention  = f'<a href="tg://user?id={user_id}">{escape(u.first_name)}</a>'
         lv_text  = (
             f"🎉 {mention} has reached <b>Level {new_level}</b>! ✨\n"
-            f"<i>Keep guessing to level up even more!</i>"
+            f"<i>+{_LEVEL_UP_COINS} 🪙 Bonus coins!</i>"
+        )
+        # Grant bonus coins
+        await user_collection.update_one(
+            {"id": user_id},
+            {"$inc": {"coins": _LEVEL_UP_COINS}},
         )
         for gid in list(_registered_chats):
             try:
@@ -372,13 +378,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
     )
 
     kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("📖 My Harem", callback_data="act:harem"),
-            InlineKeyboardButton(
-                "📚 My Collection",
-                switch_inline_query_current_chat=f"collection.{user_id} ",
-            ),
-        ],
+        [InlineKeyboardButton("📖 My Harem", callback_data="act:harem")],
     ])
 
     caption = (

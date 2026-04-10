@@ -12,6 +12,7 @@ Flow:
 Other commands: /uploadchar /delete /update  (sudo only)
 """
 import re
+from html import escape
 
 from pymongo import ReturnDocument
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -21,7 +22,7 @@ from telegram.ext import (
     ConversationHandler, MessageHandler, filters,
 )
 
-from waifu import application, collection, db, sudo_users, OWNER_ID
+from waifu import application, collection, db, sudo_users, OWNER_ID, CHARA_CHANNEL_ID
 from waifu.config import Config
 
 RARITY_MAP  = Config.RARITY_MAP
@@ -275,17 +276,36 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
 
     try:
         await collection.insert_one(char)
-        src_label = "🔗 URL" if photo.startswith("http") else "📷 ပုံ (bot file_id)"
         await update.message.reply_text(
             f"🎉 <b>Upload ပြီးပြီ!</b>\n\n"
             f"🌸 <b>{name}</b>\n"
             f"📺 {anime}\n"
             f"💎 {rarity}\n"
             f"🔢 Limit: <b>{limit} copies</b>\n"
-            f"🆔 ID: <code>{char_id}</code>\n"
-            f"🖼 Source: {src_label}",
+            f"🆔 ID: <code>{char_id}</code>",
             parse_mode=ParseMode.HTML,
         )
+
+        # ── Notify CHARA_CHANNEL_ID ───────────────────────────────────────────
+        if CHARA_CHANNEL_ID:
+            u = update.effective_user
+            mention = (
+                f'<a href="tg://user?id={u.id}">{escape(u.first_name)}</a>'
+            )
+            chan_cap = (
+                f"•{mention}• updated image for waifu <b>{escape(name)}</b>"
+            )
+            try:
+                await bot_local.send_photo(
+                    chat_id=CHARA_CHANNEL_ID,
+                    photo=img_url,
+                    caption=chan_cap,
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception as ch_err:
+                from waifu import LOGGER
+                LOGGER.warning("Channel notify failed: %s", ch_err)
+
     except Exception as e:
         await update.message.reply_text(
             f"❌ DB သိမ်းမရဘူး: {e}", parse_mode=ParseMode.HTML)
