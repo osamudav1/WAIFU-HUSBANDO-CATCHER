@@ -141,29 +141,35 @@ def start_scheduler(bot) -> None:
 async def message_counter(update: Update, context: CallbackContext) -> None:
     if not update.effective_chat or update.effective_chat.type == "private":
         return
+    if not update.effective_user:
+        return
 
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     _registered_chats.add(chat_id)
 
-    # Anti-spam: 10 consecutive messages from the same user → 10-min ignore
+    # ── Always increment counter first (anti-spam only affects warnings) ──────
+    _msg_counts[chat_id] = _msg_counts.get(chat_id, 0) + 1
+
+    # ── Anti-spam tracking (warn only — never blocks the counter) ─────────────
     last = _last_user.get(chat_id)
     if last and last["user_id"] == user_id:
         last["count"] += 1
         if last["count"] >= 10:
             warned_at = _warned.get(user_id, 0)
-            if time.time() - warned_at < 600:
-                return   # still within the ignore window
-            _warned[user_id] = time.time()
-            await update.message.reply_text(
-                f"⚠️ {escape(update.effective_user.first_name)}, slow down!\n"
-                f"Your messages will be ignored for 10 minutes."
-            )
-            return
+            if time.time() - warned_at >= 600:
+                _warned[user_id] = time.time()
+                try:
+                    await update.message.reply_text(
+                        f"⚠️ {escape(update.effective_user.first_name)}, "
+                        f"consecutive messages များလွန်းတယ်!"
+                    )
+                except Exception:
+                    pass
     else:
         _last_user[chat_id] = {"user_id": user_id, "count": 1}
 
-    _msg_counts[chat_id] = _msg_counts.get(chat_id, 0) + 1
+    # ── Check threshold and drop ───────────────────────────────────────────────
     freq = await _chat_frequency(chat_id)
     if _msg_counts[chat_id] >= freq:
         _msg_counts[chat_id] = 0
@@ -320,7 +326,7 @@ application.add_handler(CommandHandler(
 application.add_handler(CommandHandler("fav", fav, block=False))
 application.add_handler(CommandHandler("forcedrop", forcedrop, block=False))
 application.add_handler(MessageHandler(
-    filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS,
+    filters.ChatType.GROUPS & ~filters.COMMAND,
     message_counter,
     block=False,
 ))

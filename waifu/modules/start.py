@@ -49,10 +49,10 @@ SECTIONS = {
     ),
     "settings": (
         "⚙️ <b>Settings & Admin</b>\n\n"
-        "/changetime [n] — Drop every n messages (admin)\n"
-        "/resettime — Reset to default (admin)\n"
+        "/changemessage [n] — message n ခုတိုင်း drop (admin)\n"
+        "/resetmessage — Default ပြန်သတ်မှတ် (admin)\n"
         "/ping — Latency + uptime (sudo)\n"
-        "/forcedrop — Trigger instant drop (owner/sudo)"
+        "/forcedrop — Instant drop (owner/sudo)"
     ),
     "upload": (
         "📤 <b>Upload Commands</b> (sudo only)\n\n"
@@ -364,7 +364,8 @@ async def action_callback(update: Update, context: CallbackContext) -> None:
 
 OWNER_CMD_INFO = {
     "upload":    ("📤 <b>Upload Character</b>\n\nPM ထဲမှာ ပုံ တိုက်ရိုက်ပို့ (သို့) /upload ရိုက်ပေး",),
-    "forcedrop": ("⚡ <b>Force Drop</b>\n\nGroup ထဲမှာ <code>/forcedrop</code> ရိုက်ပေး",),
+    "forcedrop": ("⚡ <b>Force Drop</b>\n\nGroup ထဲမှာ <code>/forcedrop</code> ရိုက်ပေး\n\n"
+                  "Drop frequency ပြောင်းရန်:\n<code>/changemessage [n]</code>",),
     "broadcast": ("📢 <b>Broadcast</b>\n\n<code>/broadcast [message]</code> ရိုက်ပေး",),
     "delete":    ("🗑 <b>Delete Character</b>\n\n<code>/delete [ID]</code> ရိုက်ပေး",),
     "update":    ("🔧 <b>Update Character</b>\n\n<code>/update [ID] [field] [value]</code>\nFields: name, anime, rarity, img_url",),
