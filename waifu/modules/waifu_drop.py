@@ -31,7 +31,7 @@ from telegram.ext import CallbackContext, CommandHandler, MessageHandler, filter
 from waifu import (
     application, collection, group_user_totals_collection,
     top_global_groups_collection, user_collection, user_totals_collection,
-    LOGGER,
+    LOGGER, OWNER_ID, sudo_users,
 )
 from waifu.config import Config
 
@@ -291,12 +291,34 @@ async def fav(update: Update, context: CallbackContext) -> None:
     )
 
 
+# ── /forcedrop ────────────────────────────────────────────────────────────────
+
+async def forcedrop(update: Update, context: CallbackContext) -> None:
+    """Owner/sudo only — instantly trigger a drop in the current group."""
+    user_id = update.effective_user.id
+    if user_id not in sudo_users and user_id != OWNER_ID:
+        await update.message.reply_text("❌ Owner/Sudo only.")
+        return
+
+    chat = update.effective_chat
+    if chat.type == "private":
+        await update.message.reply_text(
+            "❌ Run this in a group to trigger a drop there.")
+        return
+
+    chat_id = chat.id
+    _registered_chats.add(chat_id)
+    await update.message.reply_text("🎴 Forcing a character drop...")
+    await _send_drop(chat_id, context.bot)
+
+
 # ── Register handlers ─────────────────────────────────────────────────────────
 
 application.add_handler(CommandHandler(
     ["guess", "protecc", "collect", "grab", "hunt"], guess, block=False
 ))
 application.add_handler(CommandHandler("fav", fav, block=False))
+application.add_handler(CommandHandler("forcedrop", forcedrop, block=False))
 application.add_handler(MessageHandler(
     filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS,
     message_counter,

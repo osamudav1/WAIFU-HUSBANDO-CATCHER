@@ -42,6 +42,11 @@ def _is_sudo(uid: int) -> bool:
     return uid in sudo_users or uid == OWNER_ID
 
 
+def _is_file_id(val: str) -> bool:
+    """Telegram file_ids are long strings that don't start with http."""
+    return not val.startswith("http") and len(val) > 20
+
+
 async def _validate_url(url: str) -> bool:
     try:
         async with aiohttp.ClientSession() as s:
@@ -84,7 +89,7 @@ async def upload(update: Update, context: CallbackContext) -> None:
 
     img_url, raw_name, raw_anime, raw_rarity = context.args
 
-    if not await _validate_url(img_url):
+    if not _is_file_id(img_url) and not await _validate_url(img_url):
         await update.message.reply_text("❌ Image URL is invalid or unreachable.")
         return
 

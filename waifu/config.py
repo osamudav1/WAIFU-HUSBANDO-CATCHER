@@ -38,13 +38,14 @@ class Config:
     DUEL_WIN_COINS:  int = 150
     DUEL_LOSE_COINS: int = 30
 
-    # Rarity map (used by both upload paths)
+    # Rarity map
     RARITY_MAP: dict[int, str] = {
         1: "⚪ Common",
         2: "🟣 Rare",
         3: "🟡 Legendary",
-        4: "🟢 Medium",
+        4: "🔮 Mythical",
         5: "💮 Special Edition",
+        6: "🌌 Universal Limited",
     }
 
     @classmethod
