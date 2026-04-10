@@ -95,8 +95,6 @@ async def button(update: Update, context: CallbackContext) -> None:
     back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back")]])
     main_kb  = InlineKeyboardMarkup([
         *_kb().inline_keyboard,
-        [InlineKeyboardButton("📂 Source",
-                              url="https://github.com/working/WAIFU-HUSBANDO-CATCHER")],
     ])
 
     try:
