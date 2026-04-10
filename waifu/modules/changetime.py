@@ -1,11 +1,17 @@
+"""
+modules/changetime.py — /changetime <minutes> per-group drop interval.
+
+Admin-only. Sets how many minutes between each character drop.
+"""
 from pymongo import ReturnDocument
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import CommandHandler, CallbackContext
+
 from waifu import application, user_totals_collection, sudo_users, OWNER_ID
 from waifu.config import Config
 
-_MIN, _MAX = 3, 10_000
+_MIN, _MAX = 1, 1_440   # 1 minute … 24 hours
 
 
 async def _is_admin(update: Update, context: CallbackContext) -> bool:
@@ -16,54 +22,71 @@ async def _is_admin(update: Update, context: CallbackContext) -> bool:
     return m.status in ("administrator", "creator")
 
 
-async def get_freq(chat_id: int) -> int:
+async def get_interval(chat_id: int) -> int:
+    """Return drop interval in minutes for chat_id (DB value or default)."""
     doc = await user_totals_collection.find_one({"chat_id": chat_id})
-    return int(doc["message_frequency"]) if doc and "message_frequency" in doc \
-        else Config.DEFAULT_MSG_FREQUENCY
+    if doc and "drop_interval_minutes" in doc:
+        return int(doc["drop_interval_minutes"])
+    return Config.DROP_INTERVAL_MIN
 
 
-async def changemessage(update: Update, context: CallbackContext) -> None:
+async def changetime(update: Update, context: CallbackContext) -> None:
+    if update.effective_chat.type == "private":
+        await update.message.reply_text("❌ Group ထဲမှာသာ သုံးပါ။")
+        return
     if not await _is_admin(update, context):
         await update.message.reply_text("❌ Admins only.")
         return
+
     if not context.args or not context.args[0].lstrip("-").isdigit():
-        cur = await get_freq(update.effective_chat.id)
+        cur = await get_interval(update.effective_chat.id)
         await update.message.reply_text(
-            f"📋  လောကြိုက်: <b>{cur}</b> message တိုင်း drop\n"
-            f"သုံးပုံ: /changemessage &lt;{_MIN}–{_MAX}&gt;\n"
-            f"ပြန်reset: /resetmessage",
-            parse_mode=ParseMode.HTML)
+            f"⏱ လောကြိုက်: <b>{cur}</b> မိနစ်တိုင်း drop\n"
+            f"သုံးပုံ: /changetime &lt;{_MIN}–{_MAX}&gt;\n"
+            f"ပြန်reset: /resettime",
+            parse_mode=ParseMode.HTML,
+        )
         return
+
     n = int(context.args[0])
     if n < _MIN:
-        await update.message.reply_text(f"❌ အနည်းဆုံး {_MIN}.")
+        await update.message.reply_text(f"❌ အနည်းဆုံး {_MIN} မိနစ်.")
         return
     if n > _MAX:
-        await update.message.reply_text(f"❌ အများဆုံး {_MAX}.")
+        await update.message.reply_text(f"❌ အများဆုံး {_MAX} မိနစ် (24 နာရီ).")
         return
-    old = await get_freq(update.effective_chat.id)
+
+    old = await get_interval(update.effective_chat.id)
     await user_totals_collection.find_one_and_update(
         {"chat_id": update.effective_chat.id},
-        {"$set": {"message_frequency": n}},
-        upsert=True, return_document=ReturnDocument.AFTER,
+        {"$set": {"drop_interval_minutes": n}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
     )
     await update.message.reply_text(
-        f"✅ Drop frequency: <b>{old}</b> → <b>{n}</b> messages တိုင်း drop",
-        parse_mode=ParseMode.HTML)
+        f"✅ Drop interval: <b>{old}</b> → <b>{n}</b> မိနစ်တိုင်း drop\n"
+        f"<i>(နောက် cycle မှ စတင် apply ဖြစ်မည်)</i>",
+        parse_mode=ParseMode.HTML,
+    )
 
 
-async def resetmessage(update: Update, context: CallbackContext) -> None:
+async def resettime(update: Update, context: CallbackContext) -> None:
+    if update.effective_chat.type == "private":
+        await update.message.reply_text("❌ Group ထဲမှာသာ သုံးပါ။")
+        return
     if not await _is_admin(update, context):
         await update.message.reply_text("❌ Admins only.")
         return
+
     await user_totals_collection.update_one(
         {"chat_id": update.effective_chat.id},
-        {"$unset": {"message_frequency": ""}},
+        {"$unset": {"drop_interval_minutes": ""}},
     )
     await update.message.reply_text(
-        f"✅ Default ပြန်သတ်မှတ်ပြီ: message <b>{Config.DEFAULT_MSG_FREQUENCY}</b> ခုတိုင်း drop",
-        parse_mode=ParseMode.HTML)
+        f"✅ Default ပြန်သတ်မှတ်ပြီ: <b>{Config.DROP_INTERVAL_MIN}</b> မိနစ်တိုင်း drop",
+        parse_mode=ParseMode.HTML,
+    )
 
 
-application.add_handler(CommandHandler(["changemessage", "changetime"], changemessage))
-application.add_handler(CommandHandler(["resetmessage",  "resettime"],  resetmessage))
+application.add_handler(CommandHandler(["changetime"], changetime))
+application.add_handler(CommandHandler(["resettime"], resettime))

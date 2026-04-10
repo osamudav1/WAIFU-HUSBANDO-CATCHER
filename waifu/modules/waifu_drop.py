@@ -2,22 +2,14 @@
 modules/waifu_drop.py
 
 Core game loop:
-  - Message counter → threshold drop
-  - APScheduler timed drop every N minutes
+  - asyncio timer per group → character drop every N minutes
   - /guess to claim
   - /fav to favourite
   - Anti-spam (10 consecutive messages from same user → 10-min ignore)
-
-Bug fixes vs previous version:
-  1. _active_char is cleared immediately after a correct guess so the same
-     drop cannot be guessed twice. Previously it lingered until the NEXT drop.
-  2. _sent_ids now uses a rolling window (capped at half the catalogue size,
-     minimum 20). The old "len(sent)==len(all_chars)" reset condition was
-     never triggered when new characters were added to the DB while the bot
-     was running, permanently blacklisting those characters from reappearing.
-  3. XP is now awarded for a correct guess (50 XP, configurable).
+  - Level-up broadcast to all registered groups
 """
 import asyncio
+import math
 import random
 import time
 from html import escape
@@ -34,44 +26,61 @@ from waifu import (
 from waifu.config import Config
 
 # ── Per-chat in-memory state ──────────────────────────────────────────────────
-_active_char:      dict[int, dict]      = {}  # chat_id → active character
-_claimers:         dict[int, set]       = {}  # chat_id → set of user_ids who claimed
-_msg_counts:       dict[int, int]       = {}  # chat_id → message counter
-_last_user:        dict[int, dict]      = {}  # chat_id → {user_id, count}
-_warned:           dict[int, float]     = {}  # user_id → timestamp of last warning
-_sent_ids:         dict[int, list]      = {}  # rolling window of sent char IDs
-_registered_chats: set[int]            = set()
+_active_char:      dict[int, dict]      = {}   # chat_id → active character
+_claimers:         dict[int, set]       = {}   # chat_id → set of user_ids who claimed
+_last_user:        dict[int, dict]      = {}   # chat_id → {user_id, count}
+_warned:           dict[int, float]     = {}   # user_id → timestamp of last warning
+_sent_ids:         dict[int, list]      = {}   # rolling window of sent char IDs
+_registered_chats: set[int]            = set() # all groups ever seen
+_drop_tasks:       dict[int, asyncio.Task] = {} # chat_id → asyncio drop task
 
 # XP reward. Per-drop: 1 person can claim (global limit per character is set in DB)
 _XP_PER_GUESS  = 50
 _DEFAULT_LIMIT = 10   # fallback global limit if character has no limit field
 
 
+# ── Level helpers (mirror of profile.py — kept local to avoid circular import) ─
+
+def _xp_for_level(level: int) -> int:
+    return int(200 * (level ** 1.5))
+
+
+def _calc_level(xp: int) -> tuple[int, int, int]:
+    """Returns (level, xp_into_level, xp_needed_for_next)."""
+    level = 1
+    while _xp_for_level(level + 1) <= xp:
+        level += 1
+    floor = _xp_for_level(level)
+    nxt   = _xp_for_level(level + 1)
+    return level, xp - floor, nxt - floor
+
+
 # ── Rarity helper ─────────────────────────────────────────────────────────────
 
 def _split_rarity(rarity: str) -> tuple[str, str]:
-    """Return (emoji, name) from stored rarity string like '🟣 Rare'."""
     parts = rarity.split(" ", 1)
     if len(parts) == 2:
         return parts[0], parts[1]
     return "💎", rarity
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Drop interval ─────────────────────────────────────────────────────────────
 
-async def _chat_frequency(chat_id: int) -> int:
+async def _chat_drop_interval(chat_id: int) -> int:
+    """Return drop interval in minutes for this chat."""
     doc = await user_totals_collection.find_one({"chat_id": chat_id})
-    return int(doc["message_frequency"]) if doc and "message_frequency" in doc \
-        else Config.DEFAULT_MSG_FREQUENCY
+    if doc and "drop_interval_minutes" in doc:
+        return max(1, int(doc["drop_interval_minutes"]))
+    return Config.DROP_INTERVAL_MIN
 
+
+# ── Rolling window ────────────────────────────────────────────────────────────
 
 def _rolling_window_size(total_chars: int) -> int:
-    """
-    How many recently-sent IDs to remember before a character can reappear.
-    Capped at half the catalogue (minimum 20) so even a 1-character DB works.
-    """
     return max(20, total_chars // 2)
 
+
+# ── Send drop ─────────────────────────────────────────────────────────────────
 
 async def _send_drop(chat_id: int, bot) -> None:
     """Pick a random unseen-recently character and post it to the chat."""
@@ -80,7 +89,6 @@ async def _send_drop(chat_id: int, bot) -> None:
         LOGGER.debug("No characters in DB — skipping drop for chat %s", chat_id)
         return
 
-    # Filter out sold-out characters (global claimed_count >= limit)
     available = [
         c for c in all_chars
         if c.get("claimed_count", 0) < c.get("limit", _DEFAULT_LIMIT)
@@ -91,46 +99,64 @@ async def _send_drop(chat_id: int, bot) -> None:
 
     window = _rolling_window_size(len(available))
     sent   = _sent_ids.get(chat_id, [])
-
-    # Characters not in the rolling window
     unsent = [c for c in available if c["id"] not in sent]
 
-    # If every character has been seen recently, clear the window and start fresh
     if not unsent:
         _sent_ids[chat_id] = []
         unsent = available
-        LOGGER.debug("Sent-IDs window cleared for chat %s (all %d chars seen)",
-                     chat_id, len(available))
+        LOGGER.debug("Sent-IDs window cleared for chat %s", chat_id)
 
     char = random.choice(unsent)
-
-    # Append to rolling window; trim to keep only the most recent `window` entries
     new_sent = sent + [char["id"]]
     _sent_ids[chat_id] = new_sent[-window:]
 
-    # Register as the active drop — reset claim state
     _active_char[chat_id] = char
-    _claimers[chat_id]    = set()   # fresh drop, anyone can claim
+    _claimers[chat_id]    = set()
 
     try:
         await bot.send_photo(
             chat_id=chat_id,
             photo=char["img_url"],
             caption=(
-                f"✨ <b>A new character appeared!</b>\n\n"
-                f"<i>Use /guess [name] to add them to your harem!</i>"
+                "✨ <b>A new character appeared!</b>\n\n"
+                "<i>Use /guess [name] to add them to your harem!</i>"
             ),
             parse_mode=ParseMode.HTML,
         )
         LOGGER.info("Drop sent to chat %s: %s (%s)",
                     chat_id, char["name"], char.get("rarity", "?"))
     except Exception as e:
-        # Roll back state if we couldn't actually post the message
         _active_char.pop(chat_id, None)
         LOGGER.warning("Drop failed in chat %s: %s", chat_id, e)
 
 
-# ── Message counter ───────────────────────────────────────────────────────────
+# ── Timer loop per group ──────────────────────────────────────────────────────
+
+async def _drop_loop(chat_id: int, bot) -> None:
+    """Runs forever: sleep interval minutes → drop → repeat."""
+    try:
+        while True:
+            interval = await _chat_drop_interval(chat_id)
+            LOGGER.debug("Chat %s next drop in %d min", chat_id, interval)
+            await asyncio.sleep(interval * 60)
+            await _send_drop(chat_id, bot)
+    except asyncio.CancelledError:
+        LOGGER.debug("Drop loop cancelled for chat %s", chat_id)
+    except Exception as e:
+        LOGGER.error("Drop loop error in chat %s: %s", chat_id, e)
+
+
+def _start_drop_task(chat_id: int, bot) -> None:
+    """Start (or restart) the drop timer for a group."""
+    existing = _drop_tasks.get(chat_id)
+    if existing and not existing.done():
+        return   # already running — don't restart mid-cycle
+    task = asyncio.create_task(_drop_loop(chat_id, bot))
+    _drop_tasks[chat_id] = task
+    LOGGER.info("Drop timer started for chat %s", chat_id)
+
+
+# ── Message handler (anti-spam + timer registration) ─────────────────────────
 
 async def message_counter(update: Update, context: CallbackContext) -> None:
     if not update.effective_chat or update.effective_chat.type == "private":
@@ -140,12 +166,13 @@ async def message_counter(update: Update, context: CallbackContext) -> None:
 
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
-    _registered_chats.add(chat_id)
 
-    # ── Always increment counter first (anti-spam only affects warnings) ──────
-    _msg_counts[chat_id] = _msg_counts.get(chat_id, 0) + 1
+    # Register chat and start drop timer on first message
+    if chat_id not in _registered_chats:
+        _registered_chats.add(chat_id)
+        _start_drop_task(chat_id, context.bot)
 
-    # ── Anti-spam tracking (warn only — never blocks the counter) ─────────────
+    # Anti-spam tracking (warn only)
     last = _last_user.get(chat_id)
     if last and last["user_id"] == user_id:
         last["count"] += 1
@@ -156,22 +183,12 @@ async def message_counter(update: Update, context: CallbackContext) -> None:
                 try:
                     await update.message.reply_text(
                         f"⚠️ {escape(update.effective_user.first_name)}, "
-                        f"consecutive messages များလွန်းတယ်!"
+                        "consecutive messages များလွန်းတယ်!"
                     )
                 except Exception:
                     pass
     else:
         _last_user[chat_id] = {"user_id": user_id, "count": 1}
-
-    # ── Check threshold and drop ───────────────────────────────────────────────
-    freq = await _chat_frequency(chat_id)
-    if freq < 3:                        # safety: never drop below min 3
-        freq = Config.DEFAULT_MSG_FREQUENCY
-    count = _msg_counts[chat_id]
-    LOGGER.debug("Chat %s counter: %d / %d", chat_id, count, freq)
-    if count >= freq:
-        _msg_counts[chat_id] = 0
-        await _send_drop(chat_id, context.bot)
 
 
 # ── /guess ────────────────────────────────────────────────────────────────────
@@ -181,17 +198,14 @@ async def guess(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id
     u       = update.effective_user
 
-    # No active drop in this chat
     char = _active_char.get(chat_id)
     if not char:
-        return   # silent — no character is waiting
+        return
 
     claimers = _claimers.setdefault(chat_id, set())
 
-    # Per-drop: only 1 person can claim each drop session
     if len(claimers) >= 1:
-        already_claimed = update.effective_user.id in claimers
-        if already_claimed:
+        if user_id in claimers:
             await update.message.reply_text(
                 "✅ မင်း ဒီ drop ကို ရပြီးပြီ! နောက် drop ကို စောင့်ပေး။"
             )
@@ -201,7 +215,6 @@ async def guess(update: Update, context: CallbackContext) -> None:
             )
         return
 
-    # This user already claimed this drop (safety check)
     if user_id in claimers:
         await update.message.reply_text(
             "✅ မင်း ဒီ drop ကို ရပြီးပြီ! နောက် drop ကို စောင့်ပေး။"
@@ -213,12 +226,10 @@ async def guess(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text("Usage: /guess <character name>")
         return
 
-    # Reject malicious input
     if any(bad in user_guess for bad in ("()", "&&", "||", "<script")):
         await update.message.reply_text("❌ Invalid input.")
         return
 
-    # Name matching: full name OR any single word
     name_parts = char["name"].lower().split()
     correct = (
         sorted(name_parts) == sorted(user_guess.split())
@@ -229,23 +240,26 @@ async def guess(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text("❌ Wrong name, try again!")
         return
 
-    # ── Correct guess ─────────────────────────────────────────────────────────
+    # ── Correct guess ──────────────────────────────────────────────────────────
     claimers.add(user_id)
-
-    # Clear active drop (only 1 claimer per session)
     _active_char.pop(chat_id, None)
 
-    # ── Increment global claimed_count in collection DB ────────────────────────
-    char_global_limit   = char.get("limit", _DEFAULT_LIMIT)
-    char_prev_claimed   = char.get("claimed_count", 0)
-    char_new_claimed    = char_prev_claimed + 1
+    # Fetch old XP for level-up check (before increment)
+    old_doc   = await user_collection.find_one({"id": user_id})
+    old_xp    = (old_doc or {}).get("xp", 0)
+    old_level = _calc_level(old_xp)[0]
+
+    # Update global claimed count
+    char_global_limit = char.get("limit", _DEFAULT_LIMIT)
+    char_prev_claimed = char.get("claimed_count", 0)
+    char_new_claimed  = char_prev_claimed + 1
 
     await collection.update_one(
         {"id": char["id"]},
         {"$inc": {"claimed_count": 1}},
     )
 
-    # ── Persist to user document ───────────────────────────────────────────────
+    # Update user document
     await user_collection.update_one(
         {"id": user_id},
         {
@@ -257,7 +271,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
         upsert=True,
     )
 
-    # ── Group totals ───────────────────────────────────────────────────────────
+    # Group totals
     await group_user_totals_collection.update_one(
         {"user_id": user_id, "group_id": chat_id},
         {"$set": {"username": u.username, "first_name": u.first_name},
@@ -271,7 +285,25 @@ async def guess(update: Update, context: CallbackContext) -> None:
         upsert=True,
     )
 
-    # ── Success reply ─────────────────────────────────────────────────────────
+    # ── Level-up check ─────────────────────────────────────────────────────────
+    new_xp    = old_xp + _XP_PER_GUESS
+    new_level = _calc_level(new_xp)[0]
+
+    if new_level > old_level:
+        mention  = f'<a href="tg://user?id={user_id}">{escape(u.first_name)}</a>'
+        lv_text  = (
+            f"🎉 {mention} has reached <b>Level {new_level}</b>! ✨\n"
+            f"<i>Keep guessing to level up even more!</i>"
+        )
+        for gid in list(_registered_chats):
+            try:
+                await context.bot.send_message(
+                    gid, lv_text, parse_mode=ParseMode.HTML
+                )
+            except Exception:
+                pass
+
+    # ── Success reply ──────────────────────────────────────────────────────────
     rar_emoji, rar_name = _split_rarity(char["rarity"])
     is_sold_out = char_new_claimed >= char_global_limit
     sold_out_line = (
@@ -280,7 +312,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
     )
 
     kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton("📖 My Harem", callback_data=f"act:harem"),
+        InlineKeyboardButton("📖 My Harem", callback_data="act:harem"),
     ]])
 
     caption = (
@@ -294,7 +326,6 @@ async def guess(update: Update, context: CallbackContext) -> None:
         f'{sold_out_line}'
     )
 
-    # Send as photo so the character image is visible immediately
     photo_id = char.get("img_url")
     if photo_id:
         await update.message.reply_photo(
@@ -348,12 +379,14 @@ async def forcedrop(update: Update, context: CallbackContext) -> None:
 
     chat = update.effective_chat
     if chat.type == "private":
-        await update.message.reply_text(
-            "❌ Run this in a group to trigger a drop there.")
+        await update.message.reply_text("❌ Run this in a group to trigger a drop there.")
         return
 
     chat_id = chat.id
-    _registered_chats.add(chat_id)
+    if chat_id not in _registered_chats:
+        _registered_chats.add(chat_id)
+        _start_drop_task(chat_id, context.bot)
+
     await update.message.reply_text("🎴 Forcing a character drop...")
     await _send_drop(chat_id, context.bot)
 
@@ -363,7 +396,7 @@ async def forcedrop(update: Update, context: CallbackContext) -> None:
 application.add_handler(CommandHandler(
     ["guess", "protecc", "collect", "grab", "hunt"], guess, block=False
 ))
-application.add_handler(CommandHandler("fav", fav, block=False))
+application.add_handler(CommandHandler("fav",       fav,       block=False))
 application.add_handler(CommandHandler("forcedrop", forcedrop, block=False))
 application.add_handler(MessageHandler(
     filters.ChatType.GROUPS & ~filters.COMMAND,
