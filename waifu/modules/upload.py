@@ -36,7 +36,14 @@ def _is_sudo(uid: int) -> bool:
     return uid in sudo_users or uid == OWNER_ID
 
 
+_URL_RE = re.compile(
+    r"https?://[^\s]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^\s]*)?",
+    re.IGNORECASE,
+)
+
+
 def _get_photo_from_msg(msg) -> str | None:
+    """Return file_id (for direct photos) or None."""
     if not msg:
         return None
     if msg.photo:
@@ -44,6 +51,14 @@ def _get_photo_from_msg(msg) -> str | None:
     if msg.document and msg.document.mime_type and msg.document.mime_type.startswith("image/"):
         return msg.document.file_id
     return None
+
+
+def _extract_url(msg) -> str | None:
+    """Return image URL from a text message, or None."""
+    if not msg or not msg.text:
+        return None
+    m = _URL_RE.search(msg.text.strip())
+    return m.group(0) if m else None
 
 
 async def _next_id() -> str:
@@ -85,7 +100,10 @@ async def upload_start(update: Update, context: CallbackContext) -> int:
     context.user_data.clear()
     await update.message.reply_text(
         "📸 <b>Upload — Step 1/4</b>\n\n"
-        "Character ပုံ ပို့ပေး\n\n"
+        "Character ပုံ ၂ မျိုးပေးနိုင်တယ်:\n"
+        "• ပုံ တိုက်ရိုက်ပို့ (ဓာတ်ပုံ / document)\n"
+        "• jpg/png URL link paste လုပ်\n"
+        "  <i>ဥပမာ: https://example.com/char.jpg</i>\n\n"
         "❌ ပယ်ဖျက်ရန် /cancel",
         parse_mode=ParseMode.HTML,
     )
@@ -93,18 +111,29 @@ async def upload_start(update: Update, context: CallbackContext) -> int:
 
 
 async def step_photo(update: Update, context: CallbackContext) -> int:
-    """Receive photo."""
+    """Receive photo (direct file) or jpg/png URL link."""
     if not _is_sudo(update.effective_user.id):
         return ConversationHandler.END
 
-    photo = _get_photo_from_msg(update.message)
-    if not photo:
-        await update.message.reply_text("❌ ပုံပဲ ပို့ပေး")
+    # Try direct photo/document first
+    img = _get_photo_from_msg(update.message)
+
+    # Fallback: URL link in text message
+    if not img:
+        img = _extract_url(update.message)
+
+    if not img:
+        await update.message.reply_text(
+            "❌ ပုံ တိုက်ရိုက်ပို့ (သို့) jpg/png URL link ပေး\n\n"
+            "<i>ဥပမာ URL: https://example.com/image.jpg</i>",
+            parse_mode=ParseMode.HTML,
+        )
         return WAIT_PHOTO
 
-    context.user_data['photo'] = photo
+    context.user_data['photo'] = img
+    src = "🔗 URL link" if img.startswith("http") else "📷 ပုံ"
     await update.message.reply_text(
-        "✅ <b>Step 2/4 — Character Name</b>\n\n"
+        f"✅ <b>Step 2/4 — Character Name</b>  ({src})\n\n"
         "Character အမည် ရိုက်ပေး\n"
         "<i>Space ပါရင် dash (-) သုံး\n"
         "ဥပမာ: Monkey-D-Luffy</i>\n\n"
@@ -428,13 +457,18 @@ async def update_char(upd: Update, context: CallbackContext) -> None:
 
 # ── Register handlers ─────────────────────────────────────────────────────────
 
+_PHOTO_FILTER = filters.PHOTO | filters.Document.IMAGE
+_PHOTO_OR_URL = _PHOTO_FILTER | (filters.TEXT & ~filters.COMMAND)
+
 _upload_conv = ConversationHandler(
     entry_points=[
         CommandHandler("upload", upload_start),
-        MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, step_photo),
+        # Direct photo in PM starts the conversation (no accidental trigger on text)
+        MessageHandler(_PHOTO_FILTER & filters.ChatType.PRIVATE, step_photo),
     ],
     states={
-        WAIT_PHOTO:  [MessageHandler(filters.PHOTO, step_photo)],
+        # In WAIT_PHOTO: accept both photo AND URL text
+        WAIT_PHOTO:  [MessageHandler(_PHOTO_OR_URL, step_photo)],
         WAIT_NAME:   [MessageHandler(filters.TEXT & ~filters.COMMAND, step_name)],
         WAIT_ANIME:  [MessageHandler(filters.TEXT & ~filters.COMMAND, step_anime)],
         WAIT_RARITY: [CallbackQueryHandler(step_rarity, pattern=r"^rar:")],

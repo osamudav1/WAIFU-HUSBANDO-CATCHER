@@ -337,9 +337,19 @@ async def guess(update: Update, context: CallbackContext) -> None:
         if is_sold_out else ""
     )
 
-    kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton("📖 My Harem", callback_data="act:harem"),
-    ]])
+    bot_username = Config.BOT_USERNAME.lstrip("@")
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📖 My Harem",         callback_data="act:harem"),
+            InlineKeyboardButton("🔍 Search Characters", switch_inline_query_current_chat=""),
+        ],
+        [
+            InlineKeyboardButton(
+                "📚 My Collection",
+                switch_inline_query_current_chat=f"collection.{user_id} ",
+            ),
+        ],
+    ])
 
     caption = (
         f'🪷 <a href="tg://user?id={user_id}">{escape(u.first_name)}</a>'
