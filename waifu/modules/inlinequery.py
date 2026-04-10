@@ -66,12 +66,26 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
             if user:
                 deduped = list({c["id"]: c for c in user.get("characters", [])}.values())
                 if search:
-                    # Python-side filter on the already-fetched list — re is fine here
                     pat     = re.compile(re.escape(search), re.IGNORECASE)
                     deduped = [
                         c for c in deduped
                         if pat.search(c.get("name", "")) or pat.search(c.get("anime", ""))
                     ]
+
+                # ── Refresh img_url from main collection ──────────────────────
+                # User's copy may have stale file_ids from old bots.
+                # Fetch current img_url for all characters in one query.
+                if deduped:
+                    ids_needed = [c["id"] for c in deduped]
+                    fresh_docs = await collection.find(
+                        {"id": {"$in": ids_needed}},
+                        {"id": 1, "img_url": 1},
+                    ).to_list(len(ids_needed))
+                    fresh_map = {d["id"]: d.get("img_url", "") for d in fresh_docs}
+                    for c in deduped:
+                        if c["id"] in fresh_map:
+                            c["img_url"] = fresh_map[c["id"]]
+
                 chars = deduped
 
     else:

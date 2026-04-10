@@ -137,7 +137,7 @@ async def _send_drop(chat_id: int, bot) -> None:
     _claimers[chat_id]    = set()
 
     try:
-        await bot.send_photo(
+        msg = await bot.send_photo(
             chat_id=chat_id,
             photo=char["img_url"],
             caption=(
@@ -148,6 +148,17 @@ async def _send_drop(chat_id: int, bot) -> None:
         )
         LOGGER.info("Drop sent to chat %s: %s (%s)",
                     chat_id, char["name"], char.get("rarity", "?"))
+
+        # ── Update file_id to this bot's own file_id (fixes inline CachedPhoto) ──
+        if msg.photo:
+            new_fid = msg.photo[-1].file_id
+            if new_fid != char.get("img_url"):
+                char["img_url"] = new_fid          # update in-memory active char
+                await collection.update_one(
+                    {"id": char["id"]},
+                    {"$set": {"img_url": new_fid}},
+                )
+
     except Exception as e:
         _active_char.pop(chat_id, None)
         LOGGER.warning("Drop failed in chat %s: %s", chat_id, e)
@@ -337,13 +348,9 @@ async def guess(update: Update, context: CallbackContext) -> None:
         if is_sold_out else ""
     )
 
-    bot_username = Config.BOT_USERNAME.lstrip("@")
     kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📖 My Harem",         callback_data="act:harem"),
-            InlineKeyboardButton("🔍 Search Characters", switch_inline_query_current_chat=""),
-        ],
-        [
+            InlineKeyboardButton("📖 My Harem", callback_data="act:harem"),
             InlineKeyboardButton(
                 "📚 My Collection",
                 switch_inline_query_current_chat=f"collection.{user_id} ",
