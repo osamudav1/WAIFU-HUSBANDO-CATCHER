@@ -149,19 +149,15 @@ async def _send_drop(chat_id: int, bot) -> None:
         LOGGER.info("Drop sent to chat %s: %s (%s)",
                     chat_id, char["name"], char.get("rarity", "?"))
 
-        # ── Update img_url to a permanent HTTPS URL (fixes inline ResultPhoto) ──
+        # ── Save THIS bot's file_id so inline CachedPhoto always works ──────────
+        # file_ids never expire; CDN URLs do (≈1 hr) — always store file_id.
         if msg.photo:
             new_fid = msg.photo[-1].file_id
-            try:
-                file_obj = await bot.get_file(new_fid)
-                new_url  = file_obj.file_path        # PTB v20: full HTTPS URL
-            except Exception:
-                new_url = new_fid                    # fallback: keep file_id
-            if new_url != char.get("img_url"):
-                char["img_url"] = new_url
+            if new_fid != char.get("img_url"):
+                char["img_url"] = new_fid
                 await collection.update_one(
                     {"id": char["id"]},
-                    {"$set": {"img_url": new_url}},
+                    {"$set": {"img_url": new_fid}},
                 )
 
     except Exception as e:

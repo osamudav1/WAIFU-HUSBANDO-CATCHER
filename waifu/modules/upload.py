@@ -247,26 +247,20 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
     # ── Auto-store photo in FILE_STORE_CHAT → get this bot's own file_id ─────
     # CachedPhoto in inline queries only works with THIS bot's file_ids.
     # Sending the photo through our bot gives us a permanent, bot-owned file_id.
-    img_url   = photo
-    bot_local = update.get_bot()
+    img_url    = photo
+    bot_local  = update.get_bot()
     store_chat = Config.FILE_STORE_CHAT_ID
 
-    if not photo.startswith("http"):
-        # Try to push through FILE_STORE_CHAT or directly via get_file
-        # to obtain an HTTPS URL (works with InlineQueryResultPhoto everywhere)
-        send_target = store_chat if store_chat else None
+    # If a FILE_STORE_CHAT is configured, push the photo through it so we get
+    # THIS bot's own file_id.  file_ids never expire; Telegram CDN URLs do.
+    if not photo.startswith("http") and store_chat:
         try:
-            if send_target:
-                stored_msg = await bot_local.send_photo(chat_id=send_target, photo=photo)
-                fid = stored_msg.photo[-1].file_id if stored_msg.photo else None
-            else:
-                fid = photo   # use original file_id for get_file call
-            if fid:
-                file_obj = await bot_local.get_file(fid)
-                img_url  = file_obj.file_path      # full HTTPS URL
+            stored_msg = await bot_local.send_photo(chat_id=store_chat, photo=photo)
+            if stored_msg.photo:
+                img_url = stored_msg.photo[-1].file_id   # permanent file_id
         except Exception as store_err:
             from waifu import LOGGER
-            LOGGER.warning("img_url HTTPS conversion failed: %s", store_err)
+            LOGGER.warning("FILE_STORE push failed, using original file_id: %s", store_err)
 
     char_id = await _next_id()
     char = {
@@ -324,28 +318,44 @@ async def migrate_imgs(update: Update, context: CallbackContext) -> None:
 
     msg = await update.message.reply_text("⏳ Migrating character images…  (0/?)")
 
+    import httpx as _httpx
     all_chars = await collection.find({}).to_list(length=10_000)
-    to_fix    = [c for c in all_chars if not c.get("img_url", "").startswith("http")]
-    total     = len(to_fix)
+
+    # Fix both: old-bot file_ids AND api.telegram.org URLs (expired CDN links)
+    def _needs_fix(img: str) -> bool:
+        return not img.startswith("http") or "api.telegram.org" in img
+
+    to_fix = [c for c in all_chars if _needs_fix(c.get("img_url", ""))]
+    total  = len(to_fix)
     done = 0; skipped = 0
 
-    for c in to_fix:
-        try:
-            sent = await context.bot.send_photo(
-                chat_id=store_chat,
-                photo=c["img_url"],
-            )
-            if sent.photo:
-                fid      = sent.photo[-1].file_id
-                file_obj = await context.bot.get_file(fid)
-                new_url  = file_obj.file_path          # full HTTPS URL
-                await collection.update_one(
-                    {"id": c["id"]},
-                    {"$set": {"img_url": new_url}},
+    async with _httpx.AsyncClient(timeout=20) as http:
+        for c in to_fix:
+            img = c.get("img_url", "")
+            try:
+                if "api.telegram.org" in img:
+                    # Expired CDN URL — download bytes ourselves, then re-upload
+                    resp = await http.get(img)
+                    resp.raise_for_status()
+                    photo_data = resp.content
+                else:
+                    photo_data = img   # regular file_id
+
+                sent = await context.bot.send_photo(
+                    chat_id=store_chat,
+                    photo=photo_data,
                 )
-                done += 1
-        except Exception:
-            skipped += 1
+                if sent.photo:
+                    new_fid = sent.photo[-1].file_id   # permanent file_id
+                    await collection.update_one(
+                        {"id": c["id"]},
+                        {"$set": {"img_url": new_fid}},
+                    )
+                    done += 1
+                else:
+                    skipped += 1
+            except Exception:
+                skipped += 1
 
         # Progress update every 10 chars; Telegram rate-limit safety
         if (done + skipped) % 10 == 0:
