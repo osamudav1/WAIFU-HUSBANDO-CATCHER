@@ -32,22 +32,28 @@ async def _get_anime_total(anime: str) -> int:
     return await waifu_collection.count_documents({"anime": anime})
 
 
-async def _build_card(user_id: int, idx: int) -> tuple[str, InlineKeyboardMarkup, str | None, int]:
+async def _build_card(
+    user_id: int,
+    idx: int,
+    viewer_id: int | None = None,
+) -> tuple[str, InlineKeyboardMarkup, str | None, int]:
     """
     Returns (caption, keyboard, photo_file_id, total_chars).
     idx is the 0-based position in the user's unique character list.
+    viewer_id: who is viewing (may differ from user_id for /harem <id>).
     """
     user = await user_collection.find_one({"id": user_id})
     if not user or not user.get("characters"):
-        return (
-            "📭 Harem မှာ character မရှိသေးဘူး — character တစ်ကောင် ဖမ်းပေး!",
-            InlineKeyboardMarkup([]),
-            None,
-            0,
-        )
+        owner_name = user.get("first_name", str(user_id)) if user else str(user_id)
+        if viewer_id and viewer_id != user_id:
+            msg = f"📭 <b>{escape(owner_name)}</b> ရဲ့ harem မှာ character မရှိသေးဘူး!"
+        else:
+            msg = "📭 Harem မှာ character မရှိသေးဘူး — character တစ်ကောင် ဖမ်းပေး!"
+        return (msg, InlineKeyboardMarkup([]), None, 0)
 
     chars      = user["characters"]
     fav_id     = (user.get("favorites") or [None])[0]
+    owner_name = user.get("first_name", str(user_id))
 
     # Deduplicate — keep all occurrences for count
     id_counts: dict[str, int] = {}
@@ -59,12 +65,7 @@ async def _build_card(user_id: int, idx: int) -> tuple[str, InlineKeyboardMarkup
 
     total = len(unique)
     if total == 0:
-        return (
-            "📭 Harem မှာ character မရှိသေးဘူး!",
-            InlineKeyboardMarkup([]),
-            None,
-            0,
-        )
+        return ("📭 Harem မှာ character မရှိသေးဘူး!", InlineKeyboardMarkup([]), None, 0)
 
     idx = max(0, min(idx, total - 1))
     c   = unique[idx]
@@ -75,11 +76,16 @@ async def _build_card(user_id: int, idx: int) -> tuple[str, InlineKeyboardMarkup
     fav_mark  = " ⭐" if c["id"] == fav_id else ""
     rar_icon  = _rarity_icon(c.get("rarity", ""))
     anime_tot = await _get_anime_total(c["anime"])
-    user_anime_cnt = sum(
-        1 for x in chars if x["anime"] == c["anime"]
-    )
+    user_anime_cnt = sum(1 for x in chars if x["anime"] == c["anime"])
+
+    # Header — show owner name when viewing someone else's harem
+    if viewer_id and viewer_id != user_id:
+        header = f"👤 <b>{escape(owner_name)}</b> ရဲ့ Harem\n\n"
+    else:
+        header = ""
 
     caption = (
+        f"{header}"
         f"🌸 <b>{escape(c['name'])}</b>{fav_mark}{dup_line}\n\n"
         f"📺 Aɴɪᴍᴇ: {escape(c['anime'])}  ({user_anime_cnt}/{anime_tot})\n"
         f"{rar_icon} Rᴀʀɪᴛʏ: {c.get('rarity', '?')}\n"
@@ -87,16 +93,16 @@ async def _build_card(user_id: int, idx: int) -> tuple[str, InlineKeyboardMarkup
         f"📦 {total} characters  |  💰 {user.get('coins', 0):,} coins"
     )
 
-    # Navigation keyboard
+    # Navigation keyboard — embed viewer_id in callback data
+    _vid = viewer_id if viewer_id else user_id
     nav = []
     if idx > 0:
-        nav.append(InlineKeyboardButton("⬅️", callback_data=f"harem:{idx-1}:{user_id}"))
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"harem:{idx-1}:{user_id}:{_vid}"))
     nav.append(InlineKeyboardButton(f"{idx+1} / {total}", callback_data="noop"))
     if idx < total - 1:
-        nav.append(InlineKeyboardButton("➡️", callback_data=f"harem:{idx+1}:{user_id}"))
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"harem:{idx+1}:{user_id}:{_vid}"))
 
-    kb = [nav]
-    markup   = InlineKeyboardMarkup(kb)
+    markup   = InlineKeyboardMarkup([nav])
     photo_id = c.get("img_url")
 
     return caption, markup, photo_id, total
@@ -105,15 +111,22 @@ async def _build_card(user_id: int, idx: int) -> tuple[str, InlineKeyboardMarkup
 # ── /harem command ────────────────────────────────────────────────────────────
 
 async def harem(update: Update, context: CallbackContext, idx: int = 0) -> None:
-    user_id           = update.effective_user.id
-    caption, markup, photo, total = await _build_card(user_id, idx)
+    viewer_id = update.effective_user.id
+
+    # /harem <user_id> — view someone else's collection
+    target_id = viewer_id
+    if context.args:
+        arg = context.args[0]
+        if arg.lstrip("-").isdigit():
+            target_id = int(arg)
+        else:
+            await update.message.reply_text("❌ User ID (ဂဏန်း) ထည့်ပေး\nဥပမာ: /harem 123456789")
+            return
+
+    caption, markup, photo, total = await _build_card(target_id, idx, viewer_id=viewer_id)
 
     if total == 0:
-        if update.callback_query:
-            await update.callback_query.answer()
-            await update.callback_query.edit_message_text(caption, parse_mode=ParseMode.HTML)
-        else:
-            await update.message.reply_text(caption, parse_mode=ParseMode.HTML)
+        await update.message.reply_text(caption, parse_mode=ParseMode.HTML)
         return
 
     if update.callback_query:
@@ -141,15 +154,13 @@ async def harem_callback(update: Update, context: CallbackContext) -> None:
     q = update.callback_query
     await q.answer()
 
-    parts = q.data.split(":")
+    parts    = q.data.split(":")
     idx      = int(parts[1])
     uid      = int(parts[2])
+    # viewer_id embedded (new format) or fall back to uid (old format)
+    viewer_id = int(parts[3]) if len(parts) >= 4 else uid
 
-    if q.from_user.id != uid:
-        await q.answer("❌ မင်းရဲ့ harem မဟုတ်ဘူး!", show_alert=True)
-        return
-
-    caption, markup, photo, total = await _build_card(uid, idx)
+    caption, markup, photo, total = await _build_card(uid, idx, viewer_id=viewer_id)
 
     if total == 0:
         try:
@@ -197,7 +208,7 @@ async def harem_callback(update: Update, context: CallbackContext) -> None:
 
 async def send_harem_card(user_id: int, query) -> None:
     """Send harem as a new photo card (used from other modules' callbacks)."""
-    caption, markup, photo, total = await _build_card(user_id, 0)
+    caption, markup, photo, total = await _build_card(user_id, 0, viewer_id=user_id)
 
     if total == 0:
         await query.answer(caption, show_alert=True)
@@ -225,5 +236,5 @@ async def noop(update: Update, context: CallbackContext) -> None:
 # ── Register handlers ─────────────────────────────────────────────────────────
 
 application.add_handler(CommandHandler(["harem", "collection"], harem, block=False))
-application.add_handler(CallbackQueryHandler(harem_callback, pattern=r"^harem:\d+:\d+$", block=False))
+application.add_handler(CallbackQueryHandler(harem_callback, pattern=r"^harem:\d+:\d+(:\d+)?$", block=False))
 application.add_handler(CallbackQueryHandler(noop, pattern=r"^noop$", block=False))

@@ -302,7 +302,6 @@ async def guess(update: Update, context: CallbackContext) -> None:
 
     kb = InlineKeyboardMarkup([[
         InlineKeyboardButton("📖 My Harem", callback_data=f"act:harem"),
-        InlineKeyboardButton("🔍 via Inline", switch_inline_query_current_chat=f"collection.{user_id}"),
     ]])
 
     caption = (

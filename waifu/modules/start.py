@@ -86,9 +86,6 @@ def _main_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton("⚔️ Social",      callback_data="help:social"),
             InlineKeyboardButton("📊 Leaderboard", callback_data="help:leaderboard"),
         ],
-        [
-            InlineKeyboardButton("⚙️ Settings", callback_data="help:settings"),
-        ],
     ]
     return InlineKeyboardMarkup(rows)
 
