@@ -36,19 +36,29 @@ from waifu import (
 from waifu.config import Config
 
 # ── Per-chat in-memory state ──────────────────────────────────────────────────
-_active_char:      dict[int, dict]  = {}   # chat_id → currently active character
-_claimed:          dict[int, int]   = {}   # chat_id → user_id who claimed it
-_msg_counts:       dict[int, int]   = {}   # chat_id → message counter
-_last_user:        dict[int, dict]  = {}   # chat_id → {user_id, count}
-_warned:           dict[int, float] = {}   # user_id → timestamp of last warning
-# Rolling window of recently sent char IDs per chat — capped dynamically
-_sent_ids:         dict[int, list]  = {}
-_registered_chats: set[int]         = set()
+_active_char:      dict[int, dict]      = {}  # chat_id → active character
+_claimers:         dict[int, set]       = {}  # chat_id → set of user_ids who claimed
+_msg_counts:       dict[int, int]       = {}  # chat_id → message counter
+_last_user:        dict[int, dict]      = {}  # chat_id → {user_id, count}
+_warned:           dict[int, float]     = {}  # user_id → timestamp of last warning
+_sent_ids:         dict[int, list]      = {}  # rolling window of sent char IDs
+_registered_chats: set[int]            = set()
 
 scheduler = AsyncIOScheduler(timezone="UTC")
 
-# XP reward for a correct guess
-_XP_PER_GUESS = 50
+# XP reward & max claimers per drop
+_XP_PER_GUESS  = 50
+_CLAIM_LIMIT   = 10   # max users who can claim one drop
+
+
+# ── Rarity helper ─────────────────────────────────────────────────────────────
+
+def _split_rarity(rarity: str) -> tuple[str, str]:
+    """Return (emoji, name) from stored rarity string like '🟣 Rare'."""
+    parts = rarity.split(" ", 1)
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return "💎", rarity
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -93,9 +103,9 @@ async def _send_drop(chat_id: int, bot) -> None:
     new_sent = sent + [char["id"]]
     _sent_ids[chat_id] = new_sent[-window:]
 
-    # Register as the active drop — clear any previous claim state
+    # Register as the active drop — reset claim state
     _active_char[chat_id] = char
-    _claimed.pop(chat_id, None)   # ← fresh drop, anyone can claim
+    _claimers[chat_id]    = set()   # fresh drop, anyone can claim
 
     try:
         await bot.send_photo(
@@ -181,16 +191,29 @@ async def message_counter(update: Update, context: CallbackContext) -> None:
 async def guess(update: Update, context: CallbackContext) -> None:
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
+    u       = update.effective_user
 
     # No active drop in this chat
     char = _active_char.get(chat_id)
     if not char:
         return   # silent — no character is waiting
 
-    # Already claimed in this drop session
-    if chat_id in _claimed:
+    claimers = _claimers.setdefault(chat_id, set())
+
+    # Limit already reached — sold out
+    if len(claimers) >= _CLAIM_LIMIT:
         await update.message.reply_text(
-            "❌ Already claimed by someone else! Wait for the next character."
+            f"🚫 <b>{_CLAIM_LIMIT}/{_CLAIM_LIMIT} Sold Out!</b>\n"
+            f"Character ကို လူ {_CLAIM_LIMIT} ယောက် claim ပြီးပြီ။\n"
+            f"နောက် drop ကို စောင့်ပေး!",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    # This user already claimed this drop
+    if user_id in claimers:
+        await update.message.reply_text(
+            "✅ မင်း ဒီ character ကို ရပြီးပြီ! နောက် drop ကို စောင့်ပေး။"
         )
         return
 
@@ -199,12 +222,12 @@ async def guess(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text("Usage: /guess <character name>")
         return
 
-    # Reject obviously malicious input
+    # Reject malicious input
     if any(bad in user_guess for bad in ("()", "&&", "||", "<script")):
-        await update.message.reply_text("❌ Invalid characters in guess.")
+        await update.message.reply_text("❌ Invalid input.")
         return
 
-    # Name matching: full name match OR any single word of the name
+    # Name matching: full name OR any single word
     name_parts = char["name"].lower().split()
     correct = (
         sorted(name_parts) == sorted(user_guess.split())
@@ -216,33 +239,30 @@ async def guess(update: Update, context: CallbackContext) -> None:
         return
 
     # ── Correct guess ─────────────────────────────────────────────────────────
-    # Mark claimed AND immediately clear the active drop so no second guess
-    # is possible for this session — even if another user is mid-typing.
-    _claimed[chat_id]    = user_id
-    _active_char.pop(chat_id, None)   # ← KEY FIX: drop is over, clear it now
+    claimers.add(user_id)
+    claimed_now = len(claimers)
 
-    # ── Persist to user document (upsert — never insert_one to avoid dup-key) ──
-    u = update.effective_user
+    # Clear active drop only when limit is reached
+    if claimed_now >= _CLAIM_LIMIT:
+        _active_char.pop(chat_id, None)
+
+    # ── Persist to user document ───────────────────────────────────────────────
     await user_collection.update_one(
         {"id": user_id},
         {
             "$push": {"characters": char},
             "$inc":  {"total_guesses": 1, "xp": _XP_PER_GUESS},
             "$set":  {"username": u.username, "first_name": u.first_name},
-            "$setOnInsert": {
-                "coins":     0,
-                "wins":      0,
-                "favorites": [],
-            },
+            "$setOnInsert": {"coins": 0, "wins": 0, "favorites": []},
         },
         upsert=True,
     )
 
-    # ── Group totals ──────────────────────────────────────────────────────────
+    # ── Group totals ───────────────────────────────────────────────────────────
     await group_user_totals_collection.update_one(
         {"user_id": user_id, "group_id": chat_id},
-        {"$set":  {"username": u.username, "first_name": u.first_name},
-         "$inc":  {"count": 1}},
+        {"$set": {"username": u.username, "first_name": u.first_name},
+         "$inc": {"count": 1}},
         upsert=True,
     )
     await top_global_groups_collection.update_one(
@@ -252,7 +272,13 @@ async def guess(update: Update, context: CallbackContext) -> None:
         upsert=True,
     )
 
-    # ── Success reply ─────────────────────────────────────────────────────────
+    # ── Success reply (new format) ─────────────────────────────────────────────
+    rar_emoji, rar_name = _split_rarity(char["rarity"])
+    sold_out_line = (
+        f"\n🚫 <b>{_CLAIM_LIMIT}/{_CLAIM_LIMIT} Sold Out!</b>"
+        if claimed_now >= _CLAIM_LIMIT else ""
+    )
+
     kb = InlineKeyboardMarkup([[
         InlineKeyboardButton(
             "📖 My Harem",
@@ -260,12 +286,14 @@ async def guess(update: Update, context: CallbackContext) -> None:
         )
     ]])
     await update.message.reply_text(
-        f'🎉 <a href="tg://user?id={user_id}">{escape(u.first_name)}</a> '
-        f'guessed it!\n\n'
-        f'🌸 <b>{escape(char["name"])}</b>\n'
-        f'📺 {escape(char["anime"])}\n'
-        f'💎 {char["rarity"]}\n\n'
-        f'Added to your harem! +{_XP_PER_GUESS} XP ✨',
+        f'🪷 <a href="tg://user?id={user_id}">{escape(u.first_name)}</a>'
+        f', ʏᴏᴜ ɢᴏᴛ ᴀ ɴᴇᴡ ᴄʜᴀʀᴀᴄᴛᴇʀ!\n\n'
+        f'🫧 Nᴀᴍᴇ: <b>{escape(char["name"])}</b>\n'
+        f'{rar_emoji} 𝙍𝘼𝙍𝙄𝙏𝙔: {rar_name}\n'
+        f'🏖️ Aɴɪᴍᴇ: {escape(char["anime"])} '
+        f'(<b>{claimed_now}/{_CLAIM_LIMIT}</b>)\n\n'
+        f'Added to your harem! +{_XP_PER_GUESS} XP ✨'
+        f'{sold_out_line}',
         parse_mode=ParseMode.HTML,
         reply_markup=kb,
     )
