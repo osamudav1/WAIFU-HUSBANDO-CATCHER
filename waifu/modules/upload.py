@@ -247,20 +247,26 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
     # ── Auto-store photo in FILE_STORE_CHAT → get this bot's own file_id ─────
     # CachedPhoto in inline queries only works with THIS bot's file_ids.
     # Sending the photo through our bot gives us a permanent, bot-owned file_id.
-    img_url = photo
+    img_url   = photo
+    bot_local = update.get_bot()
     store_chat = Config.FILE_STORE_CHAT_ID
-    if store_chat and not photo.startswith("http"):
+
+    if not photo.startswith("http"):
+        # Try to push through FILE_STORE_CHAT or directly via get_file
+        # to obtain an HTTPS URL (works with InlineQueryResultPhoto everywhere)
+        send_target = store_chat if store_chat else None
         try:
-            stored_msg = await update.get_bot().send_photo(
-                chat_id=store_chat,
-                photo=photo,
-            )
-            if stored_msg.photo:
-                img_url = stored_msg.photo[-1].file_id
+            if send_target:
+                stored_msg = await bot_local.send_photo(chat_id=send_target, photo=photo)
+                fid = stored_msg.photo[-1].file_id if stored_msg.photo else None
+            else:
+                fid = photo   # use original file_id for get_file call
+            if fid:
+                file_obj = await bot_local.get_file(fid)
+                img_url  = file_obj.file_path      # full HTTPS URL
         except Exception as store_err:
-            # Non-fatal: fall back to original file_id
             from waifu import LOGGER
-            LOGGER.warning("FILE_STORE upload failed: %s", store_err)
+            LOGGER.warning("img_url HTTPS conversion failed: %s", store_err)
 
     char_id = await _next_id()
     char = {
@@ -330,10 +336,12 @@ async def migrate_imgs(update: Update, context: CallbackContext) -> None:
                 photo=c["img_url"],
             )
             if sent.photo:
-                new_fid = sent.photo[-1].file_id
+                fid      = sent.photo[-1].file_id
+                file_obj = await context.bot.get_file(fid)
+                new_url  = file_obj.file_path          # full HTTPS URL
                 await collection.update_one(
                     {"id": c["id"]},
-                    {"$set": {"img_url": new_fid}},
+                    {"$set": {"img_url": new_url}},
                 )
                 done += 1
         except Exception:

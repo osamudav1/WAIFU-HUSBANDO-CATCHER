@@ -149,14 +149,19 @@ async def _send_drop(chat_id: int, bot) -> None:
         LOGGER.info("Drop sent to chat %s: %s (%s)",
                     chat_id, char["name"], char.get("rarity", "?"))
 
-        # ── Update file_id to this bot's own file_id (fixes inline CachedPhoto) ──
+        # ── Update img_url to a permanent HTTPS URL (fixes inline ResultPhoto) ──
         if msg.photo:
             new_fid = msg.photo[-1].file_id
-            if new_fid != char.get("img_url"):
-                char["img_url"] = new_fid          # update in-memory active char
+            try:
+                file_obj = await bot.get_file(new_fid)
+                new_url  = file_obj.file_path        # PTB v20: full HTTPS URL
+            except Exception:
+                new_url = new_fid                    # fallback: keep file_id
+            if new_url != char.get("img_url"):
+                char["img_url"] = new_url
                 await collection.update_one(
                     {"id": char["id"]},
-                    {"$set": {"img_url": new_fid}},
+                    {"$set": {"img_url": new_url}},
                 )
 
     except Exception as e:

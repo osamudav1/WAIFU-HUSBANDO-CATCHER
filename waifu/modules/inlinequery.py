@@ -43,10 +43,13 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
     user: dict | None = None
     chars: list[dict] = []
 
-    if raw.startswith("collection."):
+    _COLL_PREFIXES = ("collection.", "harem.")
+    _is_user_query = any(raw.startswith(p) for p in _COLL_PREFIXES)
+
+    if _is_user_query:
         # ── User's personal collection ──────────────────────────────────────
         parts    = raw.split(" ", 1)
-        uid_part = parts[0].split(".")[1]
+        uid_part = parts[0].split(".", 1)[1]   # works for both prefixes
         search   = parts[1].strip() if len(parts) > 1 else ""
 
         if uid_part.isdigit():
@@ -129,7 +132,7 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
         anime   = escape(c.get("anime", "Unknown"))
         img_raw = c.get("img_url", "")
 
-        if user and raw.startswith("collection."):
+        if user and _is_user_query:
             u_cnt = sum(1 for x in user.get("characters", []) if x["id"] == c["id"])
             u_an  = sum(1 for x in user.get("characters", []) if x["anime"] == c["anime"])
             db_an = a_total.get(c["anime"], "?")
