@@ -32,6 +32,7 @@ class Config:
                                    if u.strip().startswith("http")]
     DROP_INTERVAL_MIN:    int   = int(os.environ.get("DROP_INTERVAL_MINUTES", "15"))
     DEFAULT_MSG_FREQUENCY: int  = int(os.environ.get("DEFAULT_MSG_FREQUENCY", "100"))
+    FILE_STORE_CHAT_ID:   int   = int(os.environ.get("FILE_STORE_CHAT_ID", "0"))
 
     # Economy
     DAILY_COINS:     int = 200

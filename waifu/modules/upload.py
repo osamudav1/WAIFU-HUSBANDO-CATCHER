@@ -244,9 +244,27 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
         context.user_data.clear()
         return ConversationHandler.END
 
+    # ── Auto-store photo in FILE_STORE_CHAT → get this bot's own file_id ─────
+    # CachedPhoto in inline queries only works with THIS bot's file_ids.
+    # Sending the photo through our bot gives us a permanent, bot-owned file_id.
+    img_url = photo
+    store_chat = Config.FILE_STORE_CHAT_ID
+    if store_chat and not photo.startswith("http"):
+        try:
+            stored_msg = await update.get_bot().send_photo(
+                chat_id=store_chat,
+                photo=photo,
+            )
+            if stored_msg.photo:
+                img_url = stored_msg.photo[-1].file_id
+        except Exception as store_err:
+            # Non-fatal: fall back to original file_id
+            from waifu import LOGGER
+            LOGGER.warning("FILE_STORE upload failed: %s", store_err)
+
     char_id = await _next_id()
     char = {
-        "img_url":       photo,
+        "img_url":       img_url,
         "name":          name,
         "anime":         anime,
         "rarity":        rarity,
@@ -257,13 +275,15 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
 
     try:
         await collection.insert_one(char)
+        src_label = "🔗 URL" if photo.startswith("http") else "📷 ပုံ (bot file_id)"
         await update.message.reply_text(
             f"🎉 <b>Upload ပြီးပြီ!</b>\n\n"
             f"🌸 <b>{name}</b>\n"
             f"📺 {anime}\n"
             f"💎 {rarity}\n"
             f"🔢 Limit: <b>{limit} copies</b>\n"
-            f"🆔 ID: <code>{char_id}</code>",
+            f"🆔 ID: <code>{char_id}</code>\n"
+            f"🖼 Source: {src_label}",
             parse_mode=ParseMode.HTML,
         )
     except Exception as e:
@@ -278,6 +298,64 @@ async def cancel(update: Update, context: CallbackContext) -> int:
     context.user_data.clear()
     await update.message.reply_text("❌ Upload ပယ်ဖျက်လိုက်တယ်။")
     return ConversationHandler.END
+
+
+# ── /migrateimgs — bulk-fix all character file_ids via FILE_STORE_CHAT ────────
+
+async def migrate_imgs(update: Update, context: CallbackContext) -> None:
+    """Owner only: re-send all non-URL character images through this bot to get
+    bot-owned file_ids, then update the DB.  Required once for inline to work."""
+    import asyncio as _asyncio
+    uid = update.effective_user.id
+    if uid != OWNER_ID and not _is_sudo(uid):
+        await update.message.reply_text("❌ Owner/Sudo only.")
+        return
+
+    store_chat = Config.FILE_STORE_CHAT_ID
+    if not store_chat:
+        await update.message.reply_text("❌ FILE_STORE_CHAT_ID not configured.")
+        return
+
+    msg = await update.message.reply_text("⏳ Migrating character images…  (0/?)")
+
+    all_chars = await collection.find({}).to_list(length=10_000)
+    to_fix    = [c for c in all_chars if not c.get("img_url", "").startswith("http")]
+    total     = len(to_fix)
+    done = 0; skipped = 0
+
+    for c in to_fix:
+        try:
+            sent = await context.bot.send_photo(
+                chat_id=store_chat,
+                photo=c["img_url"],
+            )
+            if sent.photo:
+                new_fid = sent.photo[-1].file_id
+                await collection.update_one(
+                    {"id": c["id"]},
+                    {"$set": {"img_url": new_fid}},
+                )
+                done += 1
+        except Exception:
+            skipped += 1
+
+        # Progress update every 10 chars; Telegram rate-limit safety
+        if (done + skipped) % 10 == 0:
+            try:
+                await msg.edit_text(
+                    f"⏳ Migrating…  {done + skipped}/{total}  "
+                    f"(✅{done} ❌{skipped})"
+                )
+            except Exception:
+                pass
+        await _asyncio.sleep(0.4)      # ~2.5 sends/sec — well under Telegram limit
+
+    await msg.edit_text(
+        f"✅ Migration ပြီးပြီ!\n\n"
+        f"✅ Updated: {done}\n"
+        f"❌ Skipped: {skipped}\n"
+        f"📦 Total:   {total}"
+    )
 
 
 # ── /uploadchar (reply to formatted post) ─────────────────────────────────────
@@ -480,6 +558,7 @@ _upload_conv = ConversationHandler(
 )
 
 application.add_handler(_upload_conv)
-application.add_handler(CommandHandler("uploadchar", uploadchar,  block=False))
-application.add_handler(CommandHandler("delete",     delete,      block=False))
-application.add_handler(CommandHandler("update",     update_char, block=False))
+application.add_handler(CommandHandler("uploadchar",  uploadchar,   block=False))
+application.add_handler(CommandHandler("delete",      delete,       block=False))
+application.add_handler(CommandHandler("update",      update_char,  block=False))
+application.add_handler(CommandHandler("migrateimgs", migrate_imgs, block=False))
