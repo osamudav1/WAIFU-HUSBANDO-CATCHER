@@ -1,20 +1,23 @@
 """
 modules/upload.py
 
-Two upload methods:
+Upload methods:
 
-1) /upload IMG_URL character-name anime-name rarity_number
-   Classic command-line upload.
+1) Reply to any image + /upload character-name anime-name rarity_number
+   (Recommended — image is taken from the replied message)
 
-2) /uploadchar  (reply to a channel post whose caption is in the format):
+2) /upload file_id character-name anime-name rarity_number
+   (Use file_id obtained from the file-store group)
+
+3) /uploadchar  (reply to a channel post whose caption is in the format):
    🍀 Name: Sasha Braus
    🍋 Rarity: Legendary
    🌸 Anime: Attack On Titan
    🌱 ID: 26          ← optional; auto-generated if absent
 
-   The replied-to message must have a photo attached.
-
-Both methods post to CHARA_CHANNEL_ID and insert into the DB.
+File-store group:
+   Set FILE_STORE_CHAT_ID env var.  Any photo posted in that group
+   will get an automatic file_id reply from the bot.
 """
 import re
 
@@ -22,17 +25,20 @@ import aiohttp
 from pymongo import ReturnDocument
 from telegram import Update
 from telegram.constants import ParseMode
-from telegram.ext import CallbackContext, CommandHandler
+from telegram.ext import CallbackContext, CommandHandler, MessageHandler, filters
 
 from waifu import application, collection, db, sudo_users, OWNER_ID, CHARA_CHANNEL_ID
 from waifu.config import Config
 
 RARITY_MAP  = Config.RARITY_MAP
-RARITY_STRS = {v.lower(): v for v in RARITY_MAP.values()}  # e.g. "legendary" → "🟡 Legendary"
+RARITY_STRS = {v.lower(): v for v in RARITY_MAP.values()}
 
 WRONG_FORMAT = (
     "❌ Wrong format\n\n"
-    "<code>/upload IMG_URL character-name anime-name rarity_number</code>\n\n"
+    "<b>နည်း ၁</b> — ဓာတ်ပုံကို reply လုပ်ပြီး:\n"
+    "<code>/upload character-name anime-name rarity_number</code>\n\n"
+    "<b>နည်း ၂</b> — file_id သုံးပြီး:\n"
+    "<code>/upload file_id character-name anime-name rarity_number</code>\n\n"
     "<b>Rarity numbers:</b>\n"
     + "\n".join(f"  {k} → {v}" for k, v in RARITY_MAP.items())
 )
@@ -76,47 +82,70 @@ def _char_caption(char: dict, uploader_id: int, uploader_name: str) -> str:
     )
 
 
-# ── Method 1: /upload ─────────────────────────────────────────────────────────
+def _get_photo_from_msg(msg) -> str | None:
+    if msg.photo:
+        return msg.photo[-1].file_id
+    if msg.document and msg.document.mime_type and msg.document.mime_type.startswith("image/"):
+        return msg.document.file_id
+    return None
+
+
+# ── /upload ───────────────────────────────────────────────────────────────────
 
 async def upload(update: Update, context: CallbackContext) -> None:
     if not _is_sudo(update.effective_user.id):
         await update.message.reply_text("❌ Sudo only.")
         return
 
-    if len(context.args) != 4:
+    replied = update.message.reply_to_message
+    photo   = _get_photo_from_msg(replied) if replied else None
+
+    # ── Mode 1: reply to image + 3 args (name, anime, rarity) ─────────────────
+    if photo and len(context.args) == 3:
+        raw_name, raw_anime, raw_rarity = context.args
+
+    # ── Mode 2: 4 args (file_id/url, name, anime, rarity) — no reply needed ───
+    elif len(context.args) == 4:
+        img_ref, raw_name, raw_anime, raw_rarity = context.args
+        if _is_file_id(img_ref):
+            photo = img_ref
+        elif await _validate_url(img_ref):
+            photo = img_ref
+        else:
+            await update.message.reply_text("❌ file_id or image URL is invalid.")
+            return
+
+    else:
         await update.message.reply_text(WRONG_FORMAT, parse_mode=ParseMode.HTML)
-        return
-
-    img_url, raw_name, raw_anime, raw_rarity = context.args
-
-    if not _is_file_id(img_url) and not await _validate_url(img_url):
-        await update.message.reply_text("❌ Image URL is invalid or unreachable.")
         return
 
     try:
         rarity = RARITY_MAP[int(raw_rarity)]
     except (KeyError, ValueError):
         await update.message.reply_text(
-            f"❌ Invalid rarity number. Use 1–{len(RARITY_MAP)}.", parse_mode=ParseMode.HTML)
+            f"❌ Invalid rarity number. Use 1–{len(RARITY_MAP)}.")
         return
 
     name    = raw_name.replace("-", " ").title()
     anime   = raw_anime.replace("-", " ").title()
     char_id = await _next_id()
-    char    = {"img_url": img_url, "name": name, "anime": anime,
+    char    = {"img_url": photo, "name": name, "anime": anime,
                "rarity": rarity, "id": char_id}
 
     try:
         msg = await context.bot.send_photo(
             chat_id=CHARA_CHANNEL_ID,
-            photo=img_url,
+            photo=photo,
             caption=_char_caption(char, update.effective_user.id, update.effective_user.first_name),
             parse_mode=ParseMode.HTML,
         )
         char["message_id"] = msg.message_id
         await collection.insert_one(char)
         await update.message.reply_text(
-            f"✅ <b>{name}</b> added!  ID: <code>{char_id}</code>",
+            f"✅ <b>{name}</b> added!\n"
+            f"💎 {rarity}\n"
+            f"📺 {anime}\n"
+            f"🆔 ID: <code>{char_id}</code>",
             parse_mode=ParseMode.HTML,
         )
     except Exception as e:
@@ -126,17 +155,9 @@ async def upload(update: Update, context: CallbackContext) -> None:
         )
 
 
-# ── Method 2: /uploadchar (reply to formatted post) ──────────────────────────
+# ── /uploadchar (reply to formatted post) ────────────────────────────────────
 
 def _parse_caption(caption: str) -> dict | None:
-    """
-    Parse a caption like:
-        🍀 Name: Sasha Braus
-        🍋 Rarity: Legendary
-        🌸 Anime: Attack On Titan
-        🌱 ID: 26
-    Returns dict with keys: name, rarity, anime, id (id may be None).
-    """
     fields: dict[str, str] = {}
     patterns = {
         "name":   r"(?:🍀\s*)?Name\s*:\s*(.+)",
@@ -152,24 +173,21 @@ def _parse_caption(caption: str) -> dict | None:
     if "name" not in fields or "anime" not in fields:
         return None
 
-    # Normalise rarity string to our canonical format
     raw_rarity = fields.get("rarity", "").lower()
-    # Try exact match first
     rarity = RARITY_STRS.get(raw_rarity)
     if not rarity:
-        # Partial match (e.g. "legendary" inside "🟡 Legendary")
         for key, val in RARITY_STRS.items():
             if raw_rarity in key or key in raw_rarity:
                 rarity = val
                 break
     if not rarity:
-        rarity = "⚪ Common"   # safe fallback
+        rarity = "⚪ Common"
 
     return {
         "name":   fields["name"].title(),
         "anime":  fields["anime"].title(),
         "rarity": rarity,
-        "id":     fields.get("id"),       # None → auto-generate
+        "id":     fields.get("id"),
     }
 
 
@@ -191,15 +209,9 @@ async def uploadchar(update: Update, context: CallbackContext) -> None:
         )
         return
 
-    # The replied message must have a photo
-    photo = None
-    if replied.photo:
-        photo = replied.photo[-1].file_id   # highest resolution
-    elif replied.document and replied.document.mime_type.startswith("image/"):
-        photo = replied.document.file_id
-    else:
-        await update.message.reply_text(
-            "❌ The replied message must contain an image.")
+    photo = _get_photo_from_msg(replied)
+    if not photo:
+        await update.message.reply_text("❌ The replied message must contain an image.")
         return
 
     caption = replied.caption or replied.text or ""
@@ -212,7 +224,6 @@ async def uploadchar(update: Update, context: CallbackContext) -> None:
         )
         return
 
-    # Use the ID from the caption if provided and not already taken, else auto
     if parsed["id"]:
         existing = await collection.find_one({"id": parsed["id"]})
         if existing:
@@ -226,7 +237,7 @@ async def uploadchar(update: Update, context: CallbackContext) -> None:
         char_id = await _next_id()
 
     char = {
-        "img_url": photo,           # Telegram file_id (no expiry for bot-uploaded files)
+        "img_url": photo,
         "name":    parsed["name"],
         "anime":   parsed["anime"],
         "rarity":  parsed["rarity"],
@@ -244,8 +255,8 @@ async def uploadchar(update: Update, context: CallbackContext) -> None:
         await collection.insert_one(char)
         await update.message.reply_text(
             f"✅ <b>{parsed['name']}</b> uploaded!\n"
-            f"🎴 Rarity: {parsed['rarity']}\n"
-            f"📺 Anime: {parsed['anime']}\n"
+            f"💎 {parsed['rarity']}\n"
+            f"📺 {parsed['anime']}\n"
             f"🆔 ID: <code>{char_id}</code>",
             parse_mode=ParseMode.HTML,
         )
@@ -318,8 +329,8 @@ async def update_char(upd: Update, context: CallbackContext) -> None:
             await upd.message.reply_text(f"❌ Invalid rarity. Use 1–{len(RARITY_MAP)}.")
             return
     elif field == "img_url":
-        if not await _validate_url(raw):
-            await upd.message.reply_text("❌ Invalid or unreachable image URL.")
+        if not _is_file_id(raw) and not await _validate_url(raw):
+            await upd.message.reply_text("❌ Invalid or unreachable image URL/file_id.")
             return
         new_val = raw
     else:
@@ -331,15 +342,15 @@ async def update_char(upd: Update, context: CallbackContext) -> None:
     try:
         if field == "img_url":
             if char.get("message_id"):
-                await context.bot.delete_message(CHARA_CHANNEL_ID, char["message_id"])
-            msg = await context.bot.send_photo(
+                await upd.message.bot.delete_message(CHARA_CHANNEL_ID, char["message_id"])
+            msg = await upd.message.bot.send_photo(
                 CHARA_CHANNEL_ID, photo=new_val,
                 caption=_char_caption(char, upd.effective_user.id, upd.effective_user.first_name),
                 parse_mode=ParseMode.HTML,
             )
             await collection.update_one({"id": char_id}, {"$set": {"message_id": msg.message_id}})
         elif char.get("message_id"):
-            await context.bot.edit_message_caption(
+            await upd.message.bot.edit_message_caption(
                 CHARA_CHANNEL_ID, char["message_id"],
                 caption=_char_caption(char, upd.effective_user.id, upd.effective_user.first_name),
                 parse_mode=ParseMode.HTML,
@@ -354,7 +365,39 @@ async def update_char(upd: Update, context: CallbackContext) -> None:
     )
 
 
-application.add_handler(CommandHandler("upload",     upload,      block=False))
-application.add_handler(CommandHandler("uploadchar", uploadchar,  block=False))
-application.add_handler(CommandHandler("delete",     delete,      block=False))
-application.add_handler(CommandHandler("update",     update_char, block=False))
+# ── File-store group: auto file_id reply ─────────────────────────────────────
+
+_FILE_STORE_CHAT = Config.FILE_STORE_CHAT_ID
+
+
+async def filestore_photo(update: Update, context: CallbackContext) -> None:
+    """In the file-store group, reply to any photo with its file_id."""
+    if not _FILE_STORE_CHAT:
+        return
+    if update.effective_chat.id != _FILE_STORE_CHAT:
+        return
+    msg = update.message
+    if not msg:
+        return
+    photo = _get_photo_from_msg(msg)
+    if not photo:
+        return
+    await msg.reply_text(
+        f"📋 <b>File ID:</b>\n<code>{photo}</code>\n\n"
+        f"<b>Upload command:</b>\n"
+        f"<code>/upload {photo} Character-Name Anime-Name 1</code>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+# ── Register handlers ─────────────────────────────────────────────────────────
+
+application.add_handler(CommandHandler("upload",     upload,       block=False))
+application.add_handler(CommandHandler("uploadchar", uploadchar,   block=False))
+application.add_handler(CommandHandler("delete",     delete,       block=False))
+application.add_handler(CommandHandler("update",     update_char,  block=False))
+application.add_handler(MessageHandler(
+    filters.PHOTO & filters.ChatType.GROUPS,
+    filestore_photo,
+    block=False,
+))
