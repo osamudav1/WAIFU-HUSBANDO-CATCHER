@@ -29,5 +29,6 @@ args = "python -m waifu"
 outputType = "console"
 
 [deployment]
-deploymentTarget = "vm"
+deploymentTarget = "gce"
 run = ["python", "-m", "waifu"]
+ignorePorts = true
