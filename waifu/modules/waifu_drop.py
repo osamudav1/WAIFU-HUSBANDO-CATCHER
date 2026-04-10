@@ -136,15 +136,37 @@ async def _send_drop(chat_id: int, bot) -> None:
     _active_char[chat_id] = char
     _claimers[chat_id]    = set()
 
+    # ── Resolve img_url: recover broken api.telegram.org URLs on-the-fly ─────────
+    import io as _io
+    from telegram import InputFile as _InputFile
+    img_to_send = char["img_url"]
+    if isinstance(img_to_send, str) and "api.telegram.org" in img_to_send:
+        try:
+            import httpx as _httpx
+            async with _httpx.AsyncClient(timeout=20) as _http:
+                _r = await _http.get(img_to_send)
+                _r.raise_for_status()
+                img_to_send = _InputFile(_io.BytesIO(_r.content), filename="photo.jpg")
+            LOGGER.info("CDN URL recovered for char %s via download", char["id"])
+        except Exception as _dl_err:
+            LOGGER.warning("CDN URL download failed for %s: %s", char["id"], _dl_err)
+            return                          # skip this drop cycle
+
+    # InputFile (bytes) needs a longer write timeout for upload
+    _is_file_upload = not isinstance(img_to_send, str)
+    _write_timeout  = 60 if _is_file_upload else 10
+
     try:
         msg = await bot.send_photo(
             chat_id=chat_id,
-            photo=char["img_url"],
+            photo=img_to_send,
             caption=(
                 "✨ <b>A new character appeared!</b>\n\n"
                 "<i>Use /guess [name] to add them to your harem!</i>"
             ),
             parse_mode=ParseMode.HTML,
+            write_timeout=_write_timeout,
+            read_timeout=30,
         )
         LOGGER.info("Drop sent to chat %s: %s (%s)",
                     chat_id, char["name"], char.get("rarity", "?"))
