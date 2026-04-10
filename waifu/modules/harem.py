@@ -112,15 +112,42 @@ async def _build_card(
 
 async def harem(update: Update, context: CallbackContext, idx: int = 0) -> None:
     viewer_id = update.effective_user.id
-
-    # /harem <user_id> — view someone else's collection
     target_id = viewer_id
+
     if context.args:
-        arg = context.args[0]
-        if arg.lstrip("-").isdigit():
+        arg = context.args[0].strip()
+
+        # Detect character ID: zero-padded or short (e.g. "0006", "12")
+        # User IDs are typically 7+ digits and never zero-padded
+        is_char_id = arg.startswith("0") or len(arg) < 7
+
+        if is_char_id:
+            # Search caller's own harem for this character ID
+            user_doc = await user_collection.find_one({"id": viewer_id})
+            chars = user_doc.get("characters", []) if user_doc else []
+            # Build unique list (same as _build_card)
+            unique: list[dict] = list({c["id"]: c for c in chars}.values())
+            unique.sort(key=lambda x: (x["anime"], x["id"]))
+            char_idx = next(
+                (i for i, c in enumerate(unique) if c["id"].lower() == arg.lower()),
+                None,
+            )
+            if char_idx is None:
+                await update.message.reply_text(
+                    f"❌ Character ID <code>{arg}</code> ကို မင်းရဲ့ harem မှာ မတွေ့ဘူး",
+                    parse_mode=ParseMode.HTML,
+                )
+                return
+            idx = char_idx
+
+        elif arg.lstrip("-").isdigit():
+            # Large number → treat as another user's ID
             target_id = int(arg)
+
         else:
-            await update.message.reply_text("❌ User ID (ဂဏန်း) ထည့်ပေး\nဥပမာ: /harem 123456789")
+            await update.message.reply_text(
+                "❌ Character ID (ဥပမာ: 0006) သို့မဟုတ် User ID ထည့်ပေး"
+            )
             return
 
     caption, markup, photo, total = await _build_card(target_id, idx, viewer_id=viewer_id)
@@ -132,7 +159,6 @@ async def harem(update: Update, context: CallbackContext, idx: int = 0) -> None:
     if update.callback_query:
         return  # handled by harem_callback
 
-    # Command invocation — send new photo card
     if photo:
         await update.message.reply_photo(
             photo=photo,
