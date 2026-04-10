@@ -37,8 +37,8 @@ WRONG_FORMAT = (
     "❌ Wrong format\n\n"
     "<b>နည်း ၁</b> — ဓာတ်ပုံကို reply လုပ်ပြီး:\n"
     "<code>/upload character-name anime-name rarity_number</code>\n\n"
-    "<b>နည်း ၂</b> — file_id သုံးပြီး:\n"
-    "<code>/upload file_id character-name anime-name rarity_number</code>\n\n"
+    "<b>နည်း ၂</b> — channel post link ထဲက message id သုံးပြီး:\n"
+    "<code>/upload 123 character-name anime-name rarity_number</code>\n\n"
     "<b>Rarity numbers:</b>\n"
     + "\n".join(f"  {k} → {v}" for k, v in RARITY_MAP.items())
 )
@@ -48,9 +48,14 @@ def _is_sudo(uid: int) -> bool:
     return uid in sudo_users or uid == OWNER_ID
 
 
+def _is_message_id(val: str) -> bool:
+    """Short positive integer → treat as message_id from file store channel."""
+    return val.isdigit() and len(val) <= 10
+
+
 def _is_file_id(val: str) -> bool:
     """Telegram file_ids are long strings that don't start with http."""
-    return not val.startswith("http") and len(val) > 20
+    return not val.startswith("http") and not val.isdigit() and len(val) > 20
 
 
 async def _validate_url(url: str) -> bool:
@@ -104,15 +109,44 @@ async def upload(update: Update, context: CallbackContext) -> None:
     if photo and len(context.args) == 3:
         raw_name, raw_anime, raw_rarity = context.args
 
-    # ── Mode 2: 4 args (file_id/url, name, anime, rarity) — no reply needed ───
+    # ── Mode 2: 4 args (msg_id / file_id / url, name, anime, rarity) ───────────
     elif len(context.args) == 4:
         img_ref, raw_name, raw_anime, raw_rarity = context.args
-        if _is_file_id(img_ref):
+
+        if _is_message_id(img_ref):
+            # Fetch image from FILE_STORE channel using message_id
+            store_chat = Config.FILE_STORE_CHAT_ID
+            if not store_chat:
+                await update.message.reply_text(
+                    "❌ FILE_STORE_CHAT_ID မသတ်မှတ်ထားသေးဘူး။")
+                return
+            try:
+                fwd = await context.bot.forward_message(
+                    chat_id=update.effective_chat.id,
+                    from_chat_id=store_chat,
+                    message_id=int(img_ref),
+                )
+                photo = _get_photo_from_msg(fwd)
+                if not photo:
+                    await update.message.reply_text(
+                        "❌ ထို message မှာ ဓာတ်ပုံမပါဘူး။")
+                    return
+                # Delete the forwarded preview
+                try:
+                    await fwd.delete()
+                except Exception:
+                    pass
+            except Exception as e:
+                await update.message.reply_text(
+                    f"❌ Message ရှာမတွေ့ဘူး: {e}")
+                return
+
+        elif _is_file_id(img_ref):
             photo = img_ref
         elif await _validate_url(img_ref):
             photo = img_ref
         else:
-            await update.message.reply_text("❌ file_id or image URL is invalid.")
+            await update.message.reply_text("❌ message id / file_id / URL မမှန်ဘူး။")
             return
 
     else:
@@ -371,7 +405,7 @@ _FILE_STORE_CHAT = Config.FILE_STORE_CHAT_ID
 
 
 async def filestore_photo(update: Update, context: CallbackContext) -> None:
-    """In the file-store group, reply to any photo with its file_id."""
+    """In the file-store group, reply to any photo with its message_id and file_id."""
     if not _FILE_STORE_CHAT:
         return
     if update.effective_chat.id != _FILE_STORE_CHAT:
@@ -382,10 +416,12 @@ async def filestore_photo(update: Update, context: CallbackContext) -> None:
     photo = _get_photo_from_msg(msg)
     if not photo:
         return
+    msg_id = msg.message_id
     await msg.reply_text(
+        f"🔢 <b>Message ID:</b> <code>{msg_id}</code>\n\n"
         f"📋 <b>File ID:</b>\n<code>{photo}</code>\n\n"
-        f"<b>Upload command:</b>\n"
-        f"<code>/upload {photo} Character-Name Anime-Name 1</code>",
+        f"<b>Upload (message id သုံး):</b>\n"
+        f"<code>/upload {msg_id} Character-Name Anime-Name 1</code>",
         parse_mode=ParseMode.HTML,
     )
 
