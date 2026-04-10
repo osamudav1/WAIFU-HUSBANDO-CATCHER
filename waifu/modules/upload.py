@@ -1,31 +1,27 @@
 """
-modules/upload.py
+modules/upload.py  —  Step-by-step upload via ConversationHandler.
 
-Upload methods:
+Flow:
+  /upload  OR  send photo directly in PM
+    → bot saves photo
+    → ask character name
+    → ask anime name
+    → show rarity buttons
+    → confirm & upload to channel + DB
 
-1) Reply to any image + /upload character-name anime-name rarity_number
-   (Recommended — image is taken from the replied message)
-
-2) /upload file_id character-name anime-name rarity_number
-   (Use file_id obtained from the file-store group)
-
-3) /uploadchar  (reply to a channel post whose caption is in the format):
-   🍀 Name: Sasha Braus
-   🍋 Rarity: Legendary
-   🌸 Anime: Attack On Titan
-   🌱 ID: 26          ← optional; auto-generated if absent
-
-File-store group:
-   Set FILE_STORE_CHAT_ID env var.  Any photo posted in that group
-   will get an automatic file_id reply from the bot.
+Other commands: /uploadchar /delete /update  (sudo only)
+File-store group: auto file_id + message_id reply when photo posted.
 """
 import re
 
 import aiohttp
 from pymongo import ReturnDocument
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
-from telegram.ext import CallbackContext, CommandHandler, MessageHandler, filters
+from telegram.ext import (
+    CallbackContext, CallbackQueryHandler, CommandHandler,
+    ConversationHandler, MessageHandler, filters,
+)
 
 from waifu import application, collection, db, sudo_users, OWNER_ID, CHARA_CHANNEL_ID
 from waifu.config import Config
@@ -33,29 +29,23 @@ from waifu.config import Config
 RARITY_MAP  = Config.RARITY_MAP
 RARITY_STRS = {v.lower(): v for v in RARITY_MAP.values()}
 
-WRONG_FORMAT = (
-    "❌ Wrong format\n\n"
-    "<b>နည်း ၁</b> — ဓာတ်ပုံကို reply လုပ်ပြီး:\n"
-    "<code>/upload character-name anime-name rarity_number</code>\n\n"
-    "<b>နည်း ၂</b> — channel post link ထဲက message id သုံးပြီး:\n"
-    "<code>/upload 123 character-name anime-name rarity_number</code>\n\n"
-    "<b>Rarity numbers:</b>\n"
-    + "\n".join(f"  {k} → {v}" for k, v in RARITY_MAP.items())
-)
+# Conversation states
+WAIT_PHOTO, WAIT_NAME, WAIT_ANIME, WAIT_RARITY = range(4)
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _is_sudo(uid: int) -> bool:
     return uid in sudo_users or uid == OWNER_ID
 
 
-def _is_message_id(val: str) -> bool:
-    """Short positive integer → treat as message_id from file store channel."""
-    return val.isdigit() and len(val) <= 10
-
-
-def _is_file_id(val: str) -> bool:
-    """Telegram file_ids are long strings that don't start with http."""
-    return not val.startswith("http") and not val.isdigit() and len(val) > 20
+def _get_photo_from_msg(msg) -> str | None:
+    if not msg:
+        return None
+    if msg.photo:
+        return msg.photo[-1].file_id
+    if msg.document and msg.document.mime_type and msg.document.mime_type.startswith("image/"):
+        return msg.document.file_id
+    return None
 
 
 async def _validate_url(url: str) -> bool:
@@ -87,81 +77,138 @@ def _char_caption(char: dict, uploader_id: int, uploader_name: str) -> str:
     )
 
 
-def _get_photo_from_msg(msg) -> str | None:
-    if msg.photo:
-        return msg.photo[-1].file_id
-    if msg.document and msg.document.mime_type and msg.document.mime_type.startswith("image/"):
-        return msg.document.file_id
-    return None
+def _rarity_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⚪ Common",           callback_data="rar:1"),
+            InlineKeyboardButton("🟣 Rare",             callback_data="rar:2"),
+        ],
+        [
+            InlineKeyboardButton("🟡 Legendary",        callback_data="rar:3"),
+            InlineKeyboardButton("🔮 Mythical",         callback_data="rar:4"),
+        ],
+        [
+            InlineKeyboardButton("💮 Special Edition",  callback_data="rar:5"),
+            InlineKeyboardButton("🌌 Universal Limited",callback_data="rar:6"),
+        ],
+        [InlineKeyboardButton("❌ Cancel",              callback_data="rar:cancel")],
+    ])
 
 
-# ── /upload ───────────────────────────────────────────────────────────────────
+# ── Conversation steps ────────────────────────────────────────────────────────
 
-async def upload(update: Update, context: CallbackContext) -> None:
+async def upload_start(update: Update, context: CallbackContext) -> int:
+    """/upload command — entry point."""
     if not _is_sudo(update.effective_user.id):
         await update.message.reply_text("❌ Sudo only.")
-        return
+        return ConversationHandler.END
 
-    replied = update.message.reply_to_message
-    photo   = _get_photo_from_msg(replied) if replied else None
+    context.user_data.clear()
+    await update.message.reply_photo(
+        photo="https://telegra.ph/file/b925c3985f0f325e62e17.jpg",
+        caption=(
+            "📸 <b>Upload — Step 1/4</b>\n\n"
+            "Character ပုံ ပို့ပေး\n\n"
+            "❌ ပယ်ဖျက်ရန် /cancel"
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+    return WAIT_PHOTO
 
-    # ── Mode 1: reply to image + 3 args (name, anime, rarity) ─────────────────
-    if photo and len(context.args) == 3:
-        raw_name, raw_anime, raw_rarity = context.args
 
-    # ── Mode 2: 4 args (msg_id / file_id / url, name, anime, rarity) ───────────
-    elif len(context.args) == 4:
-        img_ref, raw_name, raw_anime, raw_rarity = context.args
+async def step_photo(update: Update, context: CallbackContext) -> int:
+    """Receive photo (in conversation or direct PM send)."""
+    if not _is_sudo(update.effective_user.id):
+        return ConversationHandler.END
 
-        if _is_message_id(img_ref):
-            # Fetch image from FILE_STORE channel using message_id
-            store_chat = Config.FILE_STORE_CHAT_ID
-            if not store_chat:
-                await update.message.reply_text(
-                    "❌ FILE_STORE_CHAT_ID မသတ်မှတ်ထားသေးဘူး။")
-                return
-            try:
-                fwd = await context.bot.forward_message(
-                    chat_id=update.effective_chat.id,
-                    from_chat_id=store_chat,
-                    message_id=int(img_ref),
-                )
-                photo = _get_photo_from_msg(fwd)
-                if not photo:
-                    await update.message.reply_text(
-                        "❌ ထို message မှာ ဓာတ်ပုံမပါဘူး။")
-                    return
-                # Delete the forwarded preview
-                try:
-                    await fwd.delete()
-                except Exception:
-                    pass
-            except Exception as e:
-                await update.message.reply_text(
-                    f"❌ Message ရှာမတွေ့ဘူး: {e}")
-                return
+    photo = _get_photo_from_msg(update.message)
+    if not photo:
+        await update.message.reply_text("❌ ပုံပဲ ပို့ပေး၊ တခြား file မရဘူး")
+        return WAIT_PHOTO
 
-        elif _is_file_id(img_ref):
-            photo = img_ref
-        elif await _validate_url(img_ref):
-            photo = img_ref
-        else:
-            await update.message.reply_text("❌ message id / file_id / URL မမှန်ဘူး။")
-            return
+    context.user_data['photo'] = photo
 
-    else:
-        await update.message.reply_text(WRONG_FORMAT, parse_mode=ParseMode.HTML)
-        return
+    await update.message.reply_text(
+        "✅ <b>Step 2/4 — Character Name</b>\n\n"
+        "Character အမည် ရိုက်ပေး\n"
+        "<i>Space ပါရင် dash (‑) သုံး\n"
+        "ဥပမာ: Monkey-D-Luffy</i>\n\n"
+        "❌ ပယ်ဖျက်ရန် /cancel",
+        parse_mode=ParseMode.HTML,
+    )
+    return WAIT_NAME
+
+
+async def step_name(update: Update, context: CallbackContext) -> int:
+    """Receive character name."""
+    text = update.message.text.strip()
+    if not text:
+        await update.message.reply_text("❌ အမည် ထည့်ပေး")
+        return WAIT_NAME
+
+    name = text.replace("-", " ").title()
+    context.user_data['name'] = name
+
+    await update.message.reply_text(
+        f"✅ <b>Step 3/4 — Anime Name</b>\n\n"
+        f"Name: <b>{name}</b>\n\n"
+        f"Anime အမည် ရိုက်ပေး\n"
+        f"<i>ဥပမာ: One-Piece</i>\n\n"
+        f"❌ ပယ်ဖျက်ရန် /cancel",
+        parse_mode=ParseMode.HTML,
+    )
+    return WAIT_ANIME
+
+
+async def step_anime(update: Update, context: CallbackContext) -> int:
+    """Receive anime name → show rarity buttons."""
+    text = update.message.text.strip()
+    if not text:
+        await update.message.reply_text("❌ Anime အမည် ထည့်ပေး")
+        return WAIT_ANIME
+
+    anime = text.replace("-", " ").title()
+    context.user_data['anime'] = anime
+
+    await update.message.reply_text(
+        f"✅ <b>Step 4/4 — Rarity</b>\n\n"
+        f"Name: <b>{context.user_data['name']}</b>\n"
+        f"Anime: <b>{anime}</b>\n\n"
+        f"Rarity ရွေးပေး 👇",
+        reply_markup=_rarity_keyboard(),
+        parse_mode=ParseMode.HTML,
+    )
+    return WAIT_RARITY
+
+
+async def step_rarity(update: Update, context: CallbackContext) -> int:
+    """Receive rarity button → upload."""
+    q = update.callback_query
+    await q.answer()
+
+    if q.data == "rar:cancel":
+        context.user_data.clear()
+        await q.edit_message_text("❌ Upload ပယ်ဖျက်လိုက်တယ်။")
+        return ConversationHandler.END
 
     try:
-        rarity = RARITY_MAP[int(raw_rarity)]
-    except (KeyError, ValueError):
-        await update.message.reply_text(
-            f"❌ Invalid rarity number. Use 1–{len(RARITY_MAP)}.")
-        return
+        rarity_num = int(q.data.split(":")[1])
+        rarity = RARITY_MAP[rarity_num]
+    except (IndexError, KeyError, ValueError):
+        await q.answer("❌ မမှန်ဘူး", show_alert=True)
+        return WAIT_RARITY
 
-    name    = raw_name.replace("-", " ").title()
-    anime   = raw_anime.replace("-", " ").title()
+    photo   = context.user_data.get('photo')
+    name    = context.user_data.get('name')
+    anime   = context.user_data.get('anime')
+
+    if not all([photo, name, anime]):
+        await q.edit_message_text("❌ Session ကုန်သွားတယ်။ /upload ထပ်ကြိုးစား")
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    await q.edit_message_text("⏳ Uploading...")
+
     char_id = await _next_id()
     char    = {"img_url": photo, "name": name, "anime": anime,
                "rarity": rarity, "id": char_id}
@@ -170,26 +217,36 @@ async def upload(update: Update, context: CallbackContext) -> None:
         msg = await context.bot.send_photo(
             chat_id=CHARA_CHANNEL_ID,
             photo=photo,
-            caption=_char_caption(char, update.effective_user.id, update.effective_user.first_name),
+            caption=_char_caption(char, q.from_user.id, q.from_user.first_name),
             parse_mode=ParseMode.HTML,
         )
         char["message_id"] = msg.message_id
         await collection.insert_one(char)
-        await update.message.reply_text(
-            f"✅ <b>{name}</b> added!\n"
-            f"💎 {rarity}\n"
+        await q.edit_message_text(
+            f"🎉 <b>Upload ပြီးပြီ!</b>\n\n"
+            f"🌸 <b>{name}</b>\n"
             f"📺 {anime}\n"
+            f"💎 {rarity}\n"
             f"🆔 ID: <code>{char_id}</code>",
             parse_mode=ParseMode.HTML,
         )
     except Exception as e:
-        await update.message.reply_text(
-            f"❌ Channel post failed: {e}\nCharacter was <b>not</b> saved.",
+        await q.edit_message_text(
+            f"❌ Channel post failed: {e}\n\nCharacter <b>not</b> saved.",
             parse_mode=ParseMode.HTML,
         )
 
+    context.user_data.clear()
+    return ConversationHandler.END
 
-# ── /uploadchar (reply to formatted post) ────────────────────────────────────
+
+async def cancel(update: Update, context: CallbackContext) -> int:
+    context.user_data.clear()
+    await update.message.reply_text("❌ Upload ပယ်ဖျက်လိုက်တယ်။")
+    return ConversationHandler.END
+
+
+# ── /uploadchar (reply to formatted post) ─────────────────────────────────────
 
 def _parse_caption(caption: str) -> dict | None:
     fields: dict[str, str] = {}
@@ -233,8 +290,8 @@ async def uploadchar(update: Update, context: CallbackContext) -> None:
     replied = update.message.reply_to_message
     if not replied:
         await update.message.reply_text(
-            "❌ Reply to a post that has the character's image and caption.\n\n"
-            "<b>Expected caption format:</b>\n"
+            "❌ Character ပုံ + caption ပါတဲ့ post ကို reply လုပ်ပြီး /uploadchar ရိုက်ပေး\n\n"
+            "<b>Caption format:</b>\n"
             "🍀 Name: Character Name\n"
             "🍋 Rarity: Legendary\n"
             "🌸 Anime: Anime Name\n"
@@ -245,15 +302,14 @@ async def uploadchar(update: Update, context: CallbackContext) -> None:
 
     photo = _get_photo_from_msg(replied)
     if not photo:
-        await update.message.reply_text("❌ The replied message must contain an image.")
+        await update.message.reply_text("❌ Reply လုပ်တဲ့ message မှာ ပုံမပါဘူး")
         return
 
     caption = replied.caption or replied.text or ""
     parsed  = _parse_caption(caption)
     if not parsed:
         await update.message.reply_text(
-            "❌ Could not parse the caption. Make sure it contains at least "
-            "<b>Name</b> and <b>Anime</b> fields.",
+            "❌ Caption parse မရဘူး — Name နဲ့ Anime ပါဖို့လိုတယ်",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -262,7 +318,7 @@ async def uploadchar(update: Update, context: CallbackContext) -> None:
         existing = await collection.find_one({"id": parsed["id"]})
         if existing:
             await update.message.reply_text(
-                f"❌ ID <code>{parsed['id']}</code> already exists in the database.",
+                f"❌ ID <code>{parsed['id']}</code> DB မှာ ရှိပြီးသား",
                 parse_mode=ParseMode.HTML,
             )
             return
@@ -270,33 +326,26 @@ async def uploadchar(update: Update, context: CallbackContext) -> None:
     else:
         char_id = await _next_id()
 
-    char = {
-        "img_url": photo,
-        "name":    parsed["name"],
-        "anime":   parsed["anime"],
-        "rarity":  parsed["rarity"],
-        "id":      char_id,
-    }
+    char = {"img_url": photo, "name": parsed["name"], "anime": parsed["anime"],
+            "rarity": parsed["rarity"], "id": char_id}
 
     try:
         msg = await context.bot.send_photo(
-            chat_id=CHARA_CHANNEL_ID,
-            photo=photo,
+            chat_id=CHARA_CHANNEL_ID, photo=photo,
             caption=_char_caption(char, update.effective_user.id, update.effective_user.first_name),
             parse_mode=ParseMode.HTML,
         )
         char["message_id"] = msg.message_id
         await collection.insert_one(char)
         await update.message.reply_text(
-            f"✅ <b>{parsed['name']}</b> uploaded!\n"
-            f"💎 {parsed['rarity']}\n"
-            f"📺 {parsed['anime']}\n"
+            f"🎉 <b>{parsed['name']}</b> upload ပြီးပြီ!\n"
+            f"💎 {parsed['rarity']}\n📺 {parsed['anime']}\n"
             f"🆔 ID: <code>{char_id}</code>",
             parse_mode=ParseMode.HTML,
         )
     except Exception as e:
         await update.message.reply_text(
-            f"❌ Channel post failed: {e}\nCharacter was <b>not</b> saved.",
+            f"❌ Channel post failed: {e}\nCharacter <b>not</b> saved.",
             parse_mode=ParseMode.HTML,
         )
 
@@ -314,7 +363,7 @@ async def delete(update: Update, context: CallbackContext) -> None:
 
     char = await collection.find_one_and_delete({"id": context.args[0]})
     if not char:
-        await update.message.reply_text("❌ Character not found.")
+        await update.message.reply_text("❌ Character မတွေ့ဘူး")
         return
     if char.get("message_id"):
         try:
@@ -322,7 +371,7 @@ async def delete(update: Update, context: CallbackContext) -> None:
         except Exception:
             pass
     await update.message.reply_text(
-        f"✅ Deleted <b>{char['name']}</b> (<code>{char['id']}</code>)",
+        f"✅ <b>{char['name']}</b> (<code>{char['id']}</code>) ဖျက်ပြီ",
         parse_mode=ParseMode.HTML,
     )
 
@@ -346,12 +395,12 @@ async def update_char(upd: Update, context: CallbackContext) -> None:
 
     char_id, field, raw = context.args
     if field not in _VALID:
-        await upd.message.reply_text(f"❌ Invalid field. Choose: {', '.join(_VALID)}")
+        await upd.message.reply_text(f"❌ Field မမှန်ဘူး — {', '.join(_VALID)} ထဲကရွေး")
         return
 
     char = await collection.find_one({"id": char_id})
     if not char:
-        await upd.message.reply_text("❌ Character not found.")
+        await upd.message.reply_text("❌ Character မတွေ့ဘူး")
         return
 
     if field in ("name", "anime"):
@@ -360,14 +409,11 @@ async def update_char(upd: Update, context: CallbackContext) -> None:
         try:
             new_val = RARITY_MAP[int(raw)]
         except (KeyError, ValueError):
-            await upd.message.reply_text(f"❌ Invalid rarity. Use 1–{len(RARITY_MAP)}.")
+            await upd.message.reply_text(f"❌ Rarity မမှန်ဘူး — 1–{len(RARITY_MAP)} သုံး")
             return
-    elif field == "img_url":
-        if not _is_file_id(raw) and not await _validate_url(raw):
-            await upd.message.reply_text("❌ Invalid or unreachable image URL/file_id.")
-            return
-        new_val = raw
     else:
+        if not raw.startswith("http") and not await _validate_url(raw):
+            pass  # accept file_ids too
         new_val = raw
 
     await collection.update_one({"id": char_id}, {"$set": {field: new_val}})
@@ -390,48 +436,59 @@ async def update_char(upd: Update, context: CallbackContext) -> None:
                 parse_mode=ParseMode.HTML,
             )
     except Exception as e:
-        await upd.message.reply_text(f"⚠️ DB updated but channel sync failed: {e}")
+        await upd.message.reply_text(f"⚠️ DB ကို update ပြီးပေမဲ့ channel sync မရဘူး: {e}")
         return
 
     await upd.message.reply_text(
-        f"✅ <b>{char['name']}</b> — <code>{field}</code> updated.",
+        f"✅ <b>{char['name']}</b> — <code>{field}</code> update ပြီ",
         parse_mode=ParseMode.HTML,
     )
 
 
-# ── File-store group: auto file_id reply ─────────────────────────────────────
+# ── File-store group: auto file_id + message_id reply ────────────────────────
 
 _FILE_STORE_CHAT = Config.FILE_STORE_CHAT_ID
 
 
 async def filestore_photo(update: Update, context: CallbackContext) -> None:
-    """In the file-store group, reply to any photo with its message_id and file_id."""
     if not _FILE_STORE_CHAT:
         return
     if update.effective_chat.id != _FILE_STORE_CHAT:
         return
-    msg = update.message
-    if not msg:
-        return
+    msg   = update.message
     photo = _get_photo_from_msg(msg)
     if not photo:
         return
     msg_id = msg.message_id
     await msg.reply_text(
         f"🔢 <b>Message ID:</b> <code>{msg_id}</code>\n\n"
-        f"📋 <b>File ID:</b>\n<code>{photo}</code>\n\n"
-        f"<b>Upload (message id သုံး):</b>\n"
-        f"<code>/upload {msg_id} Character-Name Anime-Name 1</code>",
+        f"📋 <b>File ID:</b>\n<code>{photo}</code>",
         parse_mode=ParseMode.HTML,
     )
 
 
 # ── Register handlers ─────────────────────────────────────────────────────────
 
-application.add_handler(CommandHandler("upload",     upload,       block=False))
-application.add_handler(CommandHandler("uploadchar", uploadchar,   block=False))
-application.add_handler(CommandHandler("delete",     delete,       block=False))
-application.add_handler(CommandHandler("update",     update_char,  block=False))
+_upload_conv = ConversationHandler(
+    entry_points=[
+        CommandHandler("upload", upload_start),
+        MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, step_photo),
+    ],
+    states={
+        WAIT_PHOTO: [MessageHandler(filters.PHOTO, step_photo)],
+        WAIT_NAME:  [MessageHandler(filters.TEXT & ~filters.COMMAND, step_name)],
+        WAIT_ANIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, step_anime)],
+        WAIT_RARITY:[CallbackQueryHandler(step_rarity, pattern=r"^rar:")],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+    allow_reentry=True,
+    per_message=False,
+)
+
+application.add_handler(_upload_conv)
+application.add_handler(CommandHandler("uploadchar", uploadchar,  block=False))
+application.add_handler(CommandHandler("delete",     delete,      block=False))
+application.add_handler(CommandHandler("update",     update_char, block=False))
 application.add_handler(MessageHandler(
     filters.PHOTO & filters.ChatType.GROUPS,
     filestore_photo,
