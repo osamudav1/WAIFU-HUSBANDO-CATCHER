@@ -22,8 +22,6 @@ import random
 import time
 from html import escape
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import CallbackContext, CommandHandler, MessageHandler, filters
@@ -43,8 +41,6 @@ _last_user:        dict[int, dict]      = {}  # chat_id → {user_id, count}
 _warned:           dict[int, float]     = {}  # user_id → timestamp of last warning
 _sent_ids:         dict[int, list]      = {}  # rolling window of sent char IDs
 _registered_chats: set[int]            = set()
-
-scheduler = AsyncIOScheduler(timezone="UTC")
 
 # XP reward. Per-drop: 1 person can claim (global limit per character is set in DB)
 _XP_PER_GUESS  = 50
@@ -132,27 +128,6 @@ async def _send_drop(chat_id: int, bot) -> None:
         # Roll back state if we couldn't actually post the message
         _active_char.pop(chat_id, None)
         LOGGER.warning("Drop failed in chat %s: %s", chat_id, e)
-
-
-# ── Scheduler ─────────────────────────────────────────────────────────────────
-
-async def _timed_drop_job(bot) -> None:
-    for chat_id in list(_registered_chats):
-        await _send_drop(chat_id, bot)
-
-
-def start_scheduler(bot) -> None:
-    scheduler.add_job(
-        _timed_drop_job,
-        trigger=IntervalTrigger(minutes=Config.DROP_INTERVAL_MIN),
-        kwargs={"bot": bot},
-        id="timed_drop",
-        replace_existing=True,
-    )
-    if not scheduler.running:
-        scheduler.start()
-    LOGGER.info("Drop scheduler started — interval: every %d min",
-                Config.DROP_INTERVAL_MIN)
 
 
 # ── Message counter ───────────────────────────────────────────────────────────
