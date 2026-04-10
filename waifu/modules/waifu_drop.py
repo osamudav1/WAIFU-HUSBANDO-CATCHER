@@ -165,7 +165,11 @@ async def message_counter(update: Update, context: CallbackContext) -> None:
 
     # ── Check threshold and drop ───────────────────────────────────────────────
     freq = await _chat_frequency(chat_id)
-    if _msg_counts[chat_id] >= freq:
+    if freq < 3:                        # safety: never drop below min 3
+        freq = Config.DEFAULT_MSG_FREQUENCY
+    count = _msg_counts[chat_id]
+    LOGGER.debug("Chat %s counter: %d / %d", chat_id, count, freq)
+    if count >= freq:
         _msg_counts[chat_id] = 0
         await _send_drop(chat_id, context.bot)
 
