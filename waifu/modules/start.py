@@ -69,7 +69,7 @@ def _main_kb() -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton("➕ Add Me to Group", url=f"https://t.me/{BOT_USERNAME}?startgroup=new")],
         [
-            InlineKeyboardButton("💬 Support", url=f"https://t.me/{SUPPORT_CHAT}"),
+            InlineKeyboardButton("💬 Support", url="https://t.me/manhwlunachat"),
             InlineKeyboardButton("📢 Updates", url="https://t.me/+py0voloZgOQ5NGU1"),
         ],
         # Quick actions
@@ -95,7 +95,7 @@ def _owner_kb() -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton("➕ Add Me to Group", url=f"https://t.me/{BOT_USERNAME}?startgroup=new")],
         [
-            InlineKeyboardButton("💬 Support", url=f"https://t.me/{SUPPORT_CHAT}"),
+            InlineKeyboardButton("💬 Support", url="https://t.me/manhwlunachat"),
             InlineKeyboardButton("📢 Updates", url="https://t.me/+py0voloZgOQ5NGU1"),
         ],
         # Quick actions
