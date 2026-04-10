@@ -34,9 +34,30 @@ _sent_ids:         dict[int, list]      = {}   # rolling window of sent char IDs
 _registered_chats: set[int]            = set() # all groups ever seen
 _drop_tasks:       dict[int, asyncio.Task] = {} # chat_id → asyncio drop task
 
-# XP reward. Per-drop: 1 person can claim (global limit per character is set in DB)
-_XP_PER_GUESS  = 50
-_DEFAULT_LIMIT = 10   # fallback global limit if character has no limit field
+# ── XP per correct guess (by rarity) ─────────────────────────────────────────
+_XP_MAP: dict[str, int] = {
+    "⚪ Common":            15,
+    "🟣 Rare":              30,
+    "🟡 Legendary":         55,
+    "🔮 Mythical":         120,
+    "💮 Special Edition":  250,
+    "🌌 Universal Limited": 1000,
+}
+_XP_DEFAULT    = 15    # fallback if rarity string unrecognised
+
+# ── Weighted drop rates ───────────────────────────────────────────────────────
+# Higher weight = more likely to appear in a drop.
+_DROP_WEIGHT: dict[str, int] = {
+    "⚪ Common":            80,
+    "🟣 Rare":              75,
+    "🟡 Legendary":         65,
+    "🔮 Mythical":          30,
+    "💮 Special Edition":   18,
+    "🌌 Universal Limited":  5,
+}
+_WEIGHT_DEFAULT = 1    # fallback weight for unknown rarity
+
+_DEFAULT_LIMIT = 10    # fallback global limit if character has no limit field
 
 
 # ── Level helpers (mirror of profile.py — kept local to avoid circular import) ─
@@ -106,7 +127,9 @@ async def _send_drop(chat_id: int, bot) -> None:
         unsent = available
         LOGGER.debug("Sent-IDs window cleared for chat %s", chat_id)
 
-    char = random.choice(unsent)
+    # Weighted selection by rarity drop rate
+    weights = [_DROP_WEIGHT.get(c.get("rarity", ""), _WEIGHT_DEFAULT) for c in unsent]
+    char = random.choices(unsent, weights=weights, k=1)[0]
     new_sent = sent + [char["id"]]
     _sent_ids[chat_id] = new_sent[-window:]
 
@@ -244,6 +267,9 @@ async def guess(update: Update, context: CallbackContext) -> None:
     claimers.add(user_id)
     _active_char.pop(chat_id, None)
 
+    # Rarity-based XP
+    xp_earned = _XP_MAP.get(char.get("rarity", ""), _XP_DEFAULT)
+
     # Fetch old XP for level-up check (before increment)
     old_doc   = await user_collection.find_one({"id": user_id})
     old_xp    = (old_doc or {}).get("xp", 0)
@@ -264,7 +290,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
         {"id": user_id},
         {
             "$push": {"characters": char},
-            "$inc":  {"total_guesses": 1, "xp": _XP_PER_GUESS},
+            "$inc":  {"total_guesses": 1, "xp": xp_earned},
             "$set":  {"username": u.username, "first_name": u.first_name},
             "$setOnInsert": {"coins": 0, "wins": 0, "favorites": []},
         },
@@ -286,7 +312,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
     )
 
     # ── Level-up check ─────────────────────────────────────────────────────────
-    new_xp    = old_xp + _XP_PER_GUESS
+    new_xp    = old_xp + xp_earned
     new_level = _calc_level(new_xp)[0]
 
     if new_level > old_level:
@@ -322,7 +348,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
         f'{rar_emoji} 𝙍𝘼𝙍𝙄𝙏𝙔: {rar_name}\n'
         f'🏖️ Aɴɪᴍᴇ: {escape(char["anime"])} '
         f'(<b>{char_new_claimed}/{char_global_limit}</b>)\n\n'
-        f'Added to your harem! +{_XP_PER_GUESS} XP ✨'
+        f'Added to your harem! +{xp_earned} XP ✨'
         f'{sold_out_line}'
     )
 
