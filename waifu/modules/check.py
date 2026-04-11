@@ -101,15 +101,23 @@ async def check(update: Update, context: CallbackContext) -> None:
     )
 
     if img_url:
+        media_type = char.get("media_type", "photo")
         try:
-            await update.message.reply_photo(
-                photo=img_url,
-                caption=caption,
-                parse_mode=ParseMode.HTML,
-            )
+            if media_type == "video":
+                await update.message.reply_video(
+                    video=img_url,
+                    caption=caption,
+                    parse_mode=ParseMode.HTML,
+                )
+            else:
+                await update.message.reply_photo(
+                    photo=img_url,
+                    caption=caption,
+                    parse_mode=ParseMode.HTML,
+                )
             return
         except Exception as e:
-            LOGGER.warning("check: failed to send photo for %s: %s", cid, e)
+            LOGGER.warning("check: failed to send media for %s: %s", cid, e)
 
     # Fallback text only
     await update.message.reply_text(caption, parse_mode=ParseMode.HTML)

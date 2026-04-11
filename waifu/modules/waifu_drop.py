@@ -149,13 +149,15 @@ async def _send_drop(chat_id: int, bot, forced_char: dict | None = None) -> None
     import io as _io
     from telegram import InputFile as _InputFile
     img_to_send = char["img_url"]
+    _char_mtype = char.get("media_type", "photo")
     if isinstance(img_to_send, str) and "api.telegram.org" in img_to_send:
+        _fname = "video.mp4" if _char_mtype == "video" else "photo.jpg"
         try:
             import httpx as _httpx
             async with _httpx.AsyncClient(timeout=20) as _http:
                 _r = await _http.get(img_to_send)
                 _r.raise_for_status()
-                img_to_send = _InputFile(_io.BytesIO(_r.content), filename="photo.jpg")
+                img_to_send = _InputFile(_io.BytesIO(_r.content), filename=_fname)
             LOGGER.info("CDN URL recovered for char %s via download", char["id"])
         except Exception as _dl_err:
             LOGGER.warning("CDN URL download failed for %s: %s", char["id"], _dl_err)
