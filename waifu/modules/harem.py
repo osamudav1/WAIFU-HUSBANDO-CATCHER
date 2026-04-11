@@ -1,8 +1,15 @@
 """
-modules/harem.py — Card-view harem: one character photo + info per page.
+modules/harem.py — Harem list view grouped by anime.
 
-Navigation:  ⬅️  [n / total]  ➡️
-Each card shows the character's photo with caption containing all info.
+Layout:
+  [Character photo]
+  [Username]'s RECENT CHARACTERS — PAGE: X/Y
+  ⚜️ Anime Name (owned/total)
+  ┄┄┄┄┄┄┄┄┄
+  🍀 ID | rarity | Name ×count
+  ...
+  [ ⬅️ PREV ]  [ NEXT ➡️ ]
+  [ ⛩ CHARACTERS (N) ]
 """
 import math
 from html import escape
@@ -13,6 +20,8 @@ from telegram.error import BadRequest
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
 from waifu import application, user_collection, collection as waifu_collection
+
+_CHARS_PER_PAGE = 10
 
 _MEDALS = {
     "⚪ Common":            "⚪",
@@ -28,115 +37,126 @@ def _rarity_icon(rarity: str) -> str:
     return _MEDALS.get(rarity, "🎴")
 
 
-async def _get_anime_total(anime: str) -> int:
-    return await waifu_collection.count_documents({"anime": anime})
-
-
-async def _build_card(
+async def _build_list_view(
     user_id: int,
-    idx: int,
+    page: int,
     viewer_id: int | None = None,
-) -> tuple[str, InlineKeyboardMarkup, str | None, int]:
+) -> tuple[str, str | None, InlineKeyboardMarkup, int]:
     """
-    Returns (caption, keyboard, photo_file_id, total_chars).
-    idx is the 0-based position in the user's unique character list.
-    viewer_id: who is viewing (may differ from user_id for /harem <id>).
+    Returns (caption, photo_file_id, keyboard, total_unique_chars).
     """
     user = await user_collection.find_one({"id": user_id})
     if not user or not user.get("characters"):
         owner_name = user.get("first_name", str(user_id)) if user else str(user_id)
-        if viewer_id and viewer_id != user_id:
-            msg = f"📭 <b>{escape(owner_name)}</b> ရဲ့ harem မှာ character မရှိသေးဘူး!"
-        else:
-            msg = "📭 Harem မှာ character မရှိသေးဘူး — character တစ်ကောင် ဖမ်းပေး!"
-        return (msg, InlineKeyboardMarkup([]), None, 0)
+        msg = (
+            f"📭 <b>{escape(owner_name)}</b> ရဲ့ harem မှာ character မရှိသေးဘူး!"
+            if viewer_id and viewer_id != user_id
+            else "📭 Harem မှာ character မရှိသေးဘူး — character တစ်ကောင် ဖမ်းပေး!"
+        )
+        return msg, None, InlineKeyboardMarkup([]), 0
 
     chars      = user["characters"]
-    fav_id     = (user.get("favorites") or [None])[0]
     owner_name = user.get("first_name", str(user_id))
+    fav_id     = (user.get("favorites") or [None])[0]
+    stars_map  = user.get("waifu_stars", {})
 
-    # Deduplicate — keep all occurrences for count
+    # Count duplicates
     id_counts: dict[str, int] = {}
     for c in chars:
         id_counts[c["id"]] = id_counts.get(c["id"], 0) + 1
 
+    # Unique chars sorted by anime → id
     unique: list[dict] = list({c["id"]: c for c in chars}.values())
     unique.sort(key=lambda x: (x["anime"], x["id"]))
 
-    total = len(unique)
-    if total == 0:
-        return ("📭 Harem မှာ character မရှိသေးဘူး!", InlineKeyboardMarkup([]), None, 0)
+    total_chars = len(unique)
+    total_pages = max(1, math.ceil(total_chars / _CHARS_PER_PAGE))
+    page        = max(0, min(page, total_pages - 1))
 
-    idx = max(0, min(idx, total - 1))
-    c   = unique[idx]
+    page_chars = unique[page * _CHARS_PER_PAGE : (page + 1) * _CHARS_PER_PAGE]
 
-    # Stats
-    cnt       = id_counts.get(c["id"], 1)
-    dup_line  = f"  ×{cnt}" if cnt > 1 else ""
-    fav_mark  = " ⭐" if c["id"] == fav_id else ""
-    rar_icon  = _rarity_icon(c.get("rarity", ""))
-    anime_tot = await _get_anime_total(c["anime"])
-    user_anime_cnt = sum(1 for x in chars if x["anime"] == c["anime"])
+    # Photo = first char on the page
+    photo = next((c.get("img_url") for c in page_chars if c.get("img_url") and not c["img_url"].startswith("http")), None)
 
-    # Stars
-    stars_map  = user.get("waifu_stars", {})
-    star_count = stars_map.get(c["id"], 0)
-    star_line  = ("  " + "★" * star_count + "☆" * (3 - star_count)) if star_count > 0 else ""
+    # Group page chars by anime
+    anime_groups: dict[str, list[dict]] = {}
+    for c in page_chars:
+        anime_groups.setdefault(c["anime"], []).append(c)
 
-    # Header — show owner name when viewing someone else's harem
-    if viewer_id and viewer_id != user_id:
-        header = f"👤 <b>{escape(owner_name)}</b> ရဲ့ Harem\n\n"
-    else:
-        header = ""
+    # Fetch anime totals in bulk
+    anime_list  = list(anime_groups.keys())
+    anime_total = {}
+    for anime in anime_list:
+        anime_total[anime] = await waifu_collection.count_documents({"anime": anime})
 
-    caption = (
-        f"{header}"
-        f"🌸 <b>{escape(c['name'])}</b>{fav_mark}{dup_line}{star_line}\n\n"
-        f"📺 Aɴɪᴍᴇ: {escape(c['anime'])}  ({user_anime_cnt}/{anime_tot})\n"
-        f"{rar_icon} Rᴀʀɪᴛʏ: {c.get('rarity', '?')}\n"
-        f"🆔 ID: <code>{c['id']}</code>\n\n"
-        f"📦 {total} characters  |  💰 {user.get('coins', 0):,} coins"
+    # Build caption lines
+    header = (
+        f"📋 <b>{escape(owner_name)}'s RECENT CHARACTERS</b> "
+        f"— PAGE: {page + 1}/{total_pages}\n\n"
     )
 
-    # Navigation keyboard — embed viewer_id in callback data
+    lines: list[str] = []
+    for anime, achars in anime_groups.items():
+        user_anime_cnt = sum(1 for x in chars if x["anime"] == anime)
+        db_total       = anime_total.get(anime, "?")
+        lines.append(f"⚜️ <b>{escape(anime)}</b> ({user_anime_cnt}/{db_total})")
+        lines.append("┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄")
+        for c in achars:
+            rar   = _rarity_icon(c.get("rarity", ""))
+            cnt   = id_counts.get(c["id"], 1)
+            stars = "★" * stars_map.get(c["id"], 0) if stars_map.get(c["id"], 0) > 0 else ""
+            fav   = " ⭐" if c["id"] == fav_id else ""
+            lines.append(
+                f"🍀 <code>{c['id']}</code> | {rar} | {escape(c['name'])}{fav}{stars} ×{cnt}"
+            )
+        lines.append("")
+
+    caption = header + "\n".join(lines).strip()
+
+    # Truncate if too long for a photo caption (1024 char limit)
+    if len(caption) > 1020:
+        caption = caption[:1017] + "…"
+
+    # Keyboard
     _vid = viewer_id if viewer_id else user_id
-    nav = []
-    if idx > 0:
-        nav.append(InlineKeyboardButton("⬅️", callback_data=f"harem:{idx-1}:{user_id}:{_vid}"))
-    nav.append(InlineKeyboardButton(f"{idx+1} / {total}", callback_data="noop"))
-    if idx < total - 1:
-        nav.append(InlineKeyboardButton("➡️", callback_data=f"harem:{idx+1}:{user_id}:{_vid}"))
+    nav  = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️ PREV", callback_data=f"harem:{page - 1}:{user_id}:{_vid}"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton("NEXT ➡️", callback_data=f"harem:{page + 1}:{user_id}:{_vid}"))
 
-    collection_btn = InlineKeyboardButton(
-        "🔱 Harem Collection",
-        switch_inline_query_current_chat=f"harem.{user_id}",
-    )
+    kb_rows: list[list] = []
+    if nav:
+        kb_rows.append(nav)
+    kb_rows.append([
+        InlineKeyboardButton(f"⛩ CHARACTERS ({total_chars})", callback_data="noop"),
+    ])
+    kb_rows.append([
+        InlineKeyboardButton(
+            "🔱 Harem Collection",
+            switch_inline_query_current_chat=f"harem.{user_id}",
+        ),
+    ])
 
-    markup = InlineKeyboardMarkup([nav, [collection_btn]])
-    photo_id = c.get("img_url")
-
-    return caption, markup, photo_id, total
+    markup = InlineKeyboardMarkup(kb_rows)
+    return caption, photo, markup, total_chars
 
 
 # ── /harem command ────────────────────────────────────────────────────────────
 
-async def harem(update: Update, context: CallbackContext, idx: int = 0) -> None:
+async def harem(update: Update, context: CallbackContext, page: int = 0) -> None:
     viewer_id = update.effective_user.id
     target_id = viewer_id
 
     if context.args:
         arg = context.args[0].strip()
-
-        # Detect character ID: zero-padded or short (e.g. "0006", "12")
-        # User IDs are typically 7+ digits and never zero-padded
         is_char_id = arg.startswith("0") or len(arg) < 7
 
         if is_char_id:
-            # Search caller's own harem for this character ID
+            # Jump to the page containing this char ID
             user_doc = await user_collection.find_one({"id": viewer_id})
-            chars = user_doc.get("characters", []) if user_doc else []
-            # Build unique list (same as _build_card)
-            unique: list[dict] = list({c["id"]: c for c in chars}.values())
+            chars    = user_doc.get("characters", []) if user_doc else []
+            unique   = list({c["id"]: c for c in chars}.values())
             unique.sort(key=lambda x: (x["anime"], x["id"]))
             char_idx = next(
                 (i for i, c in enumerate(unique) if c["id"].lower() == arg.lower()),
@@ -148,10 +168,9 @@ async def harem(update: Update, context: CallbackContext, idx: int = 0) -> None:
                     parse_mode=ParseMode.HTML,
                 )
                 return
-            idx = char_idx
+            page = char_idx // _CHARS_PER_PAGE
 
         elif arg.lstrip("-").isdigit():
-            # Large number → treat as another user's ID
             target_id = int(arg)
 
         else:
@@ -160,14 +179,11 @@ async def harem(update: Update, context: CallbackContext, idx: int = 0) -> None:
             )
             return
 
-    caption, markup, photo, total = await _build_card(target_id, idx, viewer_id=viewer_id)
+    caption, photo, markup, total = await _build_list_view(target_id, page, viewer_id=viewer_id)
 
     if total == 0:
         await update.message.reply_text(caption, parse_mode=ParseMode.HTML)
         return
-
-    if update.callback_query:
-        return  # handled by harem_callback
 
     if photo:
         await update.message.reply_photo(
@@ -184,19 +200,18 @@ async def harem(update: Update, context: CallbackContext, idx: int = 0) -> None:
         )
 
 
-# ── Inline / callback navigation ──────────────────────────────────────────────
+# ── Navigation callback ───────────────────────────────────────────────────────
 
 async def harem_callback(update: Update, context: CallbackContext) -> None:
     q = update.callback_query
     await q.answer()
 
-    parts    = q.data.split(":")
-    idx      = int(parts[1])
-    uid      = int(parts[2])
-    # viewer_id embedded (new format) or fall back to uid (old format)
+    parts     = q.data.split(":")
+    page      = int(parts[1])
+    uid       = int(parts[2])
     viewer_id = int(parts[3]) if len(parts) >= 4 else uid
 
-    caption, markup, photo, total = await _build_card(uid, idx, viewer_id=viewer_id)
+    caption, photo, markup, total = await _build_list_view(uid, page, viewer_id=viewer_id)
 
     if total == 0:
         try:
@@ -207,7 +222,6 @@ async def harem_callback(update: Update, context: CallbackContext) -> None:
 
     if photo:
         try:
-            # Try to update photo + caption together
             await q.edit_message_media(
                 media=InputMediaPhoto(
                     media=photo,
@@ -219,7 +233,6 @@ async def harem_callback(update: Update, context: CallbackContext) -> None:
         except BadRequest as e:
             if "not modified" in str(e).lower():
                 return
-            # Fallback: just update caption if media edit fails
             try:
                 await q.edit_message_caption(
                     caption=caption,
@@ -240,11 +253,10 @@ async def harem_callback(update: Update, context: CallbackContext) -> None:
                 raise
 
 
-# ── Quick harem for action_callback (from start/guess buttons) ────────────────
+# ── send_harem_card (called from other modules) ───────────────────────────────
 
 async def send_harem_card(user_id: int, query) -> None:
-    """Send harem as a new photo card (used from other modules' callbacks)."""
-    caption, markup, photo, total = await _build_card(user_id, 0, viewer_id=user_id)
+    caption, photo, markup, total = await _build_list_view(user_id, 0, viewer_id=user_id)
 
     if total == 0:
         await query.answer(caption, show_alert=True)
