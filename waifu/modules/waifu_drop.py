@@ -43,7 +43,7 @@ _drop_tasks:       dict[int, asyncio.Task] = {} # chat_id → asyncio drop task
 _drop_msg:         dict[int, object]   = {}   # chat_id → sent drop Message object
 _expiry_tasks:     dict[int, asyncio.Task] = {} # chat_id → expiry countdown task
 
-_DROP_EXPIRE_SECS = 180   # 3 minutes
+_DROP_EXPIRE_SECS = 300   # 5 minutes
 
 # ── XP per correct guess (by rarity) ─────────────────────────────────────────
 _XP_MAP: dict[str, int] = {
@@ -220,14 +220,15 @@ async def _send_drop(chat_id: int, bot, forced_char: dict | None = None) -> None
         LOGGER.info("Drop sent to chat %s: %s (%s) [%s]",
                     chat_id, char["name"], char.get("rarity", "?"), media_type)
 
-        # ── Save message & start 3-minute expiry countdown ────────────────────
+        # ── Save message & start 5-minute expiry countdown ────────────────────
         _drop_msg[chat_id] = msg
         old_exp = _expiry_tasks.pop(chat_id, None)
         if old_exp and not old_exp.done():
             old_exp.cancel()
-        _expiry_tasks[chat_id] = asyncio.get_event_loop().create_task(
+        _expiry_tasks[chat_id] = asyncio.create_task(
             _expire_drop(chat_id, char, bot)
         )
+        LOGGER.info("Expiry timer started for chat %s (5 min)", chat_id)
 
     except Exception as e:
         _active_char.pop(chat_id, None)
@@ -247,11 +248,12 @@ async def _expire_drop(chat_id: int, char: dict, bot) -> None:
     _active_char.pop(chat_id, None)
     _claimers.pop(chat_id, None)
 
+    LOGGER.info("Drop expired for chat %s — char %s", chat_id, char.get("id"))
     exp_text = (
         "⏰ <b>Character ကုန်သွားပြီ!</b>\n\n"
         f"<b>{char['name']}</b> ({char.get('anime','?')}) — "
         f"{char.get('rarity','?')}\n\n"
-        "3 မိနစ်အတွင်း ဘယ်သူမှ မယူလိုက်ဘူး 😢"
+        "5 မိနစ်အတွင်း ဘယ်သူမှ မယူလိုက်ဘူး 😢"
     )
 
     drop_message = _drop_msg.pop(chat_id, None)
