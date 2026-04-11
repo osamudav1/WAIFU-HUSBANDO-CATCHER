@@ -72,11 +72,16 @@ async def _build_card(
 
     # Stats
     cnt       = id_counts.get(c["id"], 1)
-    dup_line  = f"  ×{cnt} copies" if cnt > 1 else ""
+    dup_line  = f"  ×{cnt}" if cnt > 1 else ""
     fav_mark  = " ⭐" if c["id"] == fav_id else ""
     rar_icon  = _rarity_icon(c.get("rarity", ""))
     anime_tot = await _get_anime_total(c["anime"])
     user_anime_cnt = sum(1 for x in chars if x["anime"] == c["anime"])
+
+    # Stars
+    stars_map  = user.get("waifu_stars", {})
+    star_count = stars_map.get(c["id"], 0)
+    star_line  = ("  " + "★" * star_count + "☆" * (3 - star_count)) if star_count > 0 else ""
 
     # Header — show owner name when viewing someone else's harem
     if viewer_id and viewer_id != user_id:
@@ -86,7 +91,7 @@ async def _build_card(
 
     caption = (
         f"{header}"
-        f"🌸 <b>{escape(c['name'])}</b>{fav_mark}{dup_line}\n\n"
+        f"🌸 <b>{escape(c['name'])}</b>{fav_mark}{dup_line}{star_line}\n\n"
         f"📺 Aɴɪᴍᴇ: {escape(c['anime'])}  ({user_anime_cnt}/{anime_tot})\n"
         f"{rar_icon} Rᴀʀɪᴛʏ: {c.get('rarity', '?')}\n"
         f"🆔 ID: <code>{c['id']}</code>\n\n"
