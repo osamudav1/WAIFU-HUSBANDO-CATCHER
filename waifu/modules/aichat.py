@@ -103,10 +103,12 @@ async def ai_chat(update: Update, context: CallbackContext) -> None:
         LOGGER.error("AI chat reply error: %s", e)
 
 
-# Only listen to text messages in groups/supergroups (not commands)
+# Listen in groups, supergroups AND private DMs (not commands)
 application.add_handler(
     MessageHandler(
-        filters.TEXT & ~filters.COMMAND & (filters.ChatType.GROUP | filters.ChatType.SUPERGROUP),
+        filters.TEXT & ~filters.COMMAND & (
+            filters.ChatType.GROUP | filters.ChatType.SUPERGROUP | filters.ChatType.PRIVATE
+        ),
         ai_chat,
         block=False,
     )
