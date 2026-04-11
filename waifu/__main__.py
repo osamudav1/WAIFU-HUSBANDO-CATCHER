@@ -23,9 +23,41 @@ async def _migrate_indexes() -> None:
 
 async def _post_init(application) -> None:
     from waifu.modules.inlinequery import create_indexes
+    from waifu import GROUP_ID
     await _migrate_indexes()
     await create_indexes()
     LOGGER.info("DB indexes ensured.")
+
+    # ── Startup notification to main group ───────────────────────────────────
+    startup_msg = (
+        "╔══════════════════════╗\n"
+        "║  🌸  <b>ᴡᴀɪꜰᴜ ʙᴏᴛ ᴏɴʟɪɴᴇ</b>  🌸  ║\n"
+        "╚══════════════════════╝\n\n"
+        "⚡ <b>ꜱʏꜱᴛᴇᴍ ʙᴏᴏᴛᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ</b>\n"
+        "🎴 ᴄʜᴀʀᴀᴄᴛᴇʀ ᴅʀᴏᴘꜱ ᴀʀᴇ ɴᴏᴡ ᴀᴄᴛɪᴠᴇ\n"
+        "🏆 ᴄᴏᴍᴘᴇᴛᴇ • ᴄᴏʟʟᴇᴄᴛ • ᴄᴏɴQᴜᴇʀ\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+    target_gid = GROUP_ID
+    for attempt in range(2):
+        try:
+            await application.bot.send_message(
+                target_gid, startup_msg, parse_mode="HTML"
+            )
+            LOGGER.info("Startup message sent to group %s", target_gid)
+            break
+        except Exception as e:
+            err = str(e)
+            # Telegram returns the new supergroup ID in the error message
+            if "New chat id:" in err:
+                import re as _re
+                m = _re.search(r"New chat id:\s*(-?\d+)", err)
+                if m and attempt == 0:
+                    target_gid = int(m.group(1))
+                    LOGGER.info("Group migrated → retrying with new ID %s", target_gid)
+                    continue
+            LOGGER.warning("Could not send startup message: %s", e)
+            break
 
 
 def main() -> None:

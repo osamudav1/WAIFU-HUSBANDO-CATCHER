@@ -90,6 +90,21 @@ SECTION_LABELS = {
 }
 
 
+def _group_kb(uid: int | None = None) -> InlineKeyboardMarkup:
+    """4-button keyboard shown when /start is used inside a group."""
+    waifus_btn = (
+        InlineKeyboardButton("🔱 My Waifus", switch_inline_query_current_chat=f"harem.{uid}")
+        if uid else
+        InlineKeyboardButton("🔱 My Waifus", callback_data="act:harem")
+    )
+    return InlineKeyboardMarkup([
+        [waifus_btn,
+         InlineKeyboardButton("👤 Profile",  callback_data="act:profile")],
+        [InlineKeyboardButton("💰 Daily",    callback_data="act:daily"),
+         InlineKeyboardButton("🎴 My Harem", callback_data="act:harem")],
+    ])
+
+
 def _main_kb(uid: int | None = None) -> InlineKeyboardMarkup:
     harem_btn = (
         InlineKeyboardButton("🔱 My Waifus", switch_inline_query_current_chat=f"harem.{uid}")
@@ -232,8 +247,12 @@ async def start(update: Update, context: CallbackContext) -> None:
         caption = WELCOME
         markup  = _main_kb(u.id)
     else:
-        caption = "🎴 I'm alive! DM me for info."
-        markup  = _main_kb(u.id)
+        caption = (
+            "🌸 <b>ᴡᴀɪꜰᴜ ᴄᴀᴛᴄʜᴇʀ</b> 🌸\n\n"
+            "ᴄʜᴀʀᴀᴄᴛᴇʀꜱ ᴅʀᴏᴘ ʜᴇʀᴇ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ.\n"
+            "ᴜꜱᴇ /ɢᴜᴇꜱꜱ ᴛᴏ ᴄʟᴀɪᴍ ᴛʜᴇᴍ!"
+        )
+        markup  = _group_kb(u.id)
 
     if photo:
         await context.bot.send_photo(
