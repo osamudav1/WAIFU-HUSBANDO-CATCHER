@@ -81,18 +81,57 @@ async def changetime(update: Update, context: CallbackContext) -> None:
             )
             return
 
-        # /changetime <minutes>  →  hint (no group_id given)
+        # /changetime <minutes>  →  set ALL groups to that interval
         if len(args) == 1:
+            if not args[0].lstrip("-").isdigit():
+                await update.message.reply_text(
+                    "သုံးပုံ:\n"
+                    "<code>/changetime &lt;minutes&gt;</code> — group အားလုံးကို သတ်မှတ်\n"
+                    "<code>/changetime &lt;group_id&gt; &lt;minutes&gt;</code> — group တစ်ခုကို သတ်မှတ်\n"
+                    "<code>/changetime</code> — group list ကြည့်",
+                    parse_mode=ParseMode.HTML,
+                )
+                return
+            n = int(args[0])
+            if n < _MIN:
+                await update.message.reply_text(f"❌ အနည်းဆုံး {_MIN} မိနစ်.")
+                return
+            if n > _MAX:
+                await update.message.reply_text(f"❌ အများဆုံး {_MAX} မိနစ် (24 နာရီ).")
+                return
+
+            # Collect all known group IDs from the three collections
+            from waifu import (
+                top_global_groups_collection,
+                group_user_totals_collection,
+            )
+            g1 = set(await top_global_groups_collection.distinct("group_id"))
+            g2 = set(await group_user_totals_collection.distinct("group_id"))
+            g3 = set(
+                d["chat_id"]
+                for d in await user_totals_collection.find(
+                    {"chat_id": {"$lt": 0}}
+                ).to_list(length=1000)
+            )
+            all_groups = list(g1 | g2 | g3)
+
+            for gid in all_groups:
+                await user_totals_collection.find_one_and_update(
+                    {"chat_id": gid},
+                    {"$set": {"drop_interval_minutes": n}},
+                    upsert=True,
+                    return_document=ReturnDocument.AFTER,
+                )
+
             await update.message.reply_text(
-                "⚠️ DM မှာ သုံးပုံ:\n"
-                "<code>/changetime &lt;group_id&gt; &lt;minutes&gt;</code>\n\n"
-                "Group list ကြည့်ရန်:\n"
-                "<code>/changetime</code>",
+                f"✅ Group <b>{len(all_groups)}</b> ခုအကုန်လုံး\n"
+                f"Drop interval → <b>{n}</b> မိနစ်တိုင်း drop\n"
+                f"<i>(နောက် cycle မှ စတင် apply ဖြစ်မည်)</i>",
                 parse_mode=ParseMode.HTML,
             )
             return
 
-        # /changetime <group_id> <minutes>
+        # /changetime <group_id> <minutes>  →  set one specific group
         group_id_str, minutes_str = args[0], args[1]
         if not group_id_str.lstrip("-").isdigit() or not minutes_str.lstrip("-").isdigit():
             await update.message.reply_text("❌ /changetime <group_id> <minutes>")
@@ -179,11 +218,30 @@ async def resettime(update: Update, context: CallbackContext) -> None:
 
         args = context.args or []
 
-        # /resettime  →  list all groups
+        # /resettime  →  reset ALL groups to default
         if not args:
-            await _list_all_groups(
-                context.bot,
-                lambda text, **kw: update.message.reply_text(text, **kw),
+            from waifu import (
+                top_global_groups_collection,
+                group_user_totals_collection,
+            )
+            g1 = set(await top_global_groups_collection.distinct("group_id"))
+            g2 = set(await group_user_totals_collection.distinct("group_id"))
+            g3 = set(
+                d["chat_id"]
+                for d in await user_totals_collection.find(
+                    {"chat_id": {"$lt": 0}}
+                ).to_list(length=1000)
+            )
+            all_groups = list(g1 | g2 | g3)
+            for gid in all_groups:
+                await user_totals_collection.update_one(
+                    {"chat_id": gid},
+                    {"$unset": {"drop_interval_minutes": ""}},
+                )
+            await update.message.reply_text(
+                f"✅ Group <b>{len(all_groups)}</b> ခုအကုန်လုံး\n"
+                f"Default ပြန်သတ်မှတ်ပြီ: <b>{Config.DROP_INTERVAL_MIN}</b> မိနစ်တိုင်း drop",
+                parse_mode=ParseMode.HTML,
             )
             return
 
