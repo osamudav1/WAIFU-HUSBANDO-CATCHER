@@ -90,8 +90,9 @@ async def _build_list_view(
         anime_total[anime] = await waifu_collection.count_documents({"anime": anime})
 
     # Build caption lines
-    header = (
-        f"📋 <b>{escape(owner_name)}'s RECENT CHARACTERS</b> "
+    mention = f"<a href='tg://user?id={user_id}'>{escape(owner_name)}</a>"
+    header  = (
+        f"📋 <b>{mention}'s RECENT CHARACTERS</b> "
         f"— PAGE: {page + 1}/{total_pages}\n\n"
     )
 
@@ -111,11 +112,12 @@ async def _build_list_view(
             )
         lines.append("")
 
-    caption = header + "\n".join(lines).strip()
-
-    # Truncate if too long for a photo caption (1024 char limit)
-    if len(caption) > 1020:
-        caption = caption[:1017] + "…"
+    body = "\n".join(lines).strip()
+    # Truncate body before wrapping (caption limit = 1024 for photos)
+    max_body = 1024 - len(header) - len("<blockquote></blockquote>") - 5
+    if len(body) > max_body:
+        body = body[:max_body] + "…"
+    caption = header + f"<blockquote>{body}</blockquote>"
 
     # Keyboard
     _vid = viewer_id if viewer_id else user_id
