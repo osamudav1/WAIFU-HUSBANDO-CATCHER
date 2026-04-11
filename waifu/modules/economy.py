@@ -286,7 +286,7 @@ async def market(update: Update, context: CallbackContext) -> None:
         f"💎 {rarity}\n\n"
         f"💰 Price: <b>{price:,} 🪙</b>\n"
         f"👤 Seller: <b>{seller}</b>\n\n"
-        f"<i>Market Place ကိုနှိပ်ပြီး ကဒ်အားလုံးကြည့်ဝယ်နိုင်</i>"
+        f"<blockquote>More Waifu Market Click\nMarket Place Button Now</blockquote>"
     )
 
     # Show latest listing photo if available, else text
