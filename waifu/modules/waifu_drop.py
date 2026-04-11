@@ -16,14 +16,21 @@ from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
-from telegram.ext import CallbackContext, CommandHandler, MessageHandler, filters
+from telegram.ext import (
+    CallbackContext, CommandHandler, ConversationHandler,
+    MessageHandler, filters,
+)
 
 from waifu import (
     application, collection, group_user_totals_collection,
     top_global_groups_collection, user_collection, user_totals_collection,
+    bot_settings_collection,
     LOGGER, OWNER_ID, sudo_users,
 )
 from waifu.config import Config
+
+# ── Conversation state ────────────────────────────────────────────────────────
+_WAIT_ANNOUNCE = 0
 
 # ── Per-chat in-memory state ──────────────────────────────────────────────────
 _active_char:      dict[int, dict]      = {}   # chat_id → active character
@@ -187,15 +194,45 @@ async def _send_drop(chat_id: int, bot) -> None:
         LOGGER.warning("Drop failed in chat %s: %s", chat_id, e)
 
 
+# ── Pre-drop announcement ─────────────────────────────────────────────────────
+
+PRE_ANNOUNCE_SEC = 30   # seconds before drop to send the teaser
+
+async def _send_pre_announce(chat_id: int, bot) -> None:
+    """Send the configured pre-drop teaser to the group (if set)."""
+    try:
+        doc = await bot_settings_collection.find_one({"key": "drop_announce"})
+        if not doc:
+            return
+        ann_type  = doc.get("type", "text")
+        ann_value = doc.get("value", "")
+        if not ann_value:
+            return
+        if ann_type == "sticker":
+            await bot.send_sticker(chat_id, sticker=ann_value)
+        else:   # text / emoji
+            await bot.send_message(chat_id, ann_value, parse_mode=ParseMode.HTML)
+    except Exception as e:
+        LOGGER.warning("Pre-announce failed for %s: %s", chat_id, e)
+
+
 # ── Timer loop per group ──────────────────────────────────────────────────────
 
 async def _drop_loop(chat_id: int, bot) -> None:
-    """Runs forever: sleep interval minutes → drop → repeat."""
+    """Runs forever: sleep (interval − 30 s) → pre-announce → 30 s → drop → repeat."""
     try:
         while True:
-            interval = await _chat_drop_interval(chat_id)
+            interval   = await _chat_drop_interval(chat_id)
+            total_secs = interval * 60
             LOGGER.debug("Chat %s next drop in %d min", chat_id, interval)
-            await asyncio.sleep(interval * 60)
+
+            if total_secs > PRE_ANNOUNCE_SEC + 10:
+                await asyncio.sleep(total_secs - PRE_ANNOUNCE_SEC)
+                await _send_pre_announce(chat_id, bot)
+                await asyncio.sleep(PRE_ANNOUNCE_SEC)
+            else:
+                await asyncio.sleep(total_secs)
+
             await _send_drop(chat_id, bot)
     except asyncio.CancelledError:
         LOGGER.debug("Drop loop cancelled for chat %s", chat_id)
@@ -464,13 +501,105 @@ async def forcedrop(update: Update, context: CallbackContext) -> None:
     await _send_drop(chat_id, context.bot)
 
 
+# ── /setdropannounce ──────────────────────────────────────────────────────────
+
+async def _setannounce_start(update: Update, context: CallbackContext) -> int:
+    """Owner-only: begin setting a new pre-drop announcement."""
+    if update.effective_user.id != OWNER_ID:
+        return ConversationHandler.END
+    if update.effective_chat.type != "private":
+        await update.message.reply_text("⚠️ ဒီ command ကို bot DM မှာသာ သုံးပါ။")
+        return ConversationHandler.END
+
+    doc = await bot_settings_collection.find_one({"key": "drop_announce"})
+    current = ""
+    if doc:
+        t = doc.get("type","text")
+        v = doc.get("value","")
+        current = f"\n\n<b>လက်ရှိ:</b> [{t}] <code>{escape(str(v))}</code>"
+
+    await update.message.reply_text(
+        "🎴 <b>Pre-Drop Announcement</b>\n\n"
+        "Drop မကျခင် <b>30 စက္ကန့်</b>အလိုမှာ group တွေကို ကြေငြာချင်တဲ့\n"
+        "<b>sticker / emoji / text</b> ကို ယခု ပို့ပါ။\n\n"
+        "❌ ဖျက်ချင်ရင် /cleardropannounce"
+        f"{current}",
+        parse_mode=ParseMode.HTML,
+    )
+    return _WAIT_ANNOUNCE
+
+
+async def _setannounce_receive(update: Update, context: CallbackContext) -> int:
+    """Receive sticker or text/emoji and save as the announcement."""
+    msg = update.message
+
+    if msg.sticker:
+        fid = msg.sticker.file_id
+        await bot_settings_collection.update_one(
+            {"key": "drop_announce"},
+            {"$set": {"key": "drop_announce", "type": "sticker", "value": fid}},
+            upsert=True,
+        )
+        await msg.reply_text(
+            "✅ <b>Pre-Drop Sticker သတ်မှတ်ပြီး!</b>\n"
+            "Drop မကျခင် 30 sec အလိုမှာ group တွေကို ဒီ sticker ပို့မယ်။",
+            parse_mode=ParseMode.HTML,
+        )
+    elif msg.text:
+        text = msg.text.strip()
+        await bot_settings_collection.update_one(
+            {"key": "drop_announce"},
+            {"$set": {"key": "drop_announce", "type": "text", "value": text}},
+            upsert=True,
+        )
+        await msg.reply_text(
+            f"✅ <b>Pre-Drop Announcement သတ်မှတ်ပြီး!</b>\n\n"
+            f"Preview:\n{text}",
+            parse_mode=ParseMode.HTML,
+        )
+    else:
+        await msg.reply_text("❌ Text သို့ Sticker သာ လက်ခံနိုင်သည်။ ထပ်မံ ပို့ပါ သို့ /cancel")
+        return _WAIT_ANNOUNCE
+
+    return ConversationHandler.END
+
+
+async def _setannounce_cancel(update: Update, context: CallbackContext) -> int:
+    await update.message.reply_text("❌ ဖျက်လိုက်ပြီ။")
+    return ConversationHandler.END
+
+
+async def cleardropannounce(update: Update, context: CallbackContext) -> None:
+    """Owner-only: remove the pre-drop announcement."""
+    if update.effective_user.id != OWNER_ID:
+        return
+    await bot_settings_collection.delete_one({"key": "drop_announce"})
+    await update.message.reply_text("✅ Pre-Drop Announcement ဖျက်ပြီးပြီ။")
+
+
 # ── Register handlers ─────────────────────────────────────────────────────────
+
+_announce_conv = ConversationHandler(
+    entry_points=[CommandHandler("setdropannounce", _setannounce_start)],
+    states={
+        _WAIT_ANNOUNCE: [
+            MessageHandler(
+                filters.ChatType.PRIVATE & (filters.TEXT | filters.Sticker.ALL),
+                _setannounce_receive,
+            ),
+        ],
+    },
+    fallbacks=[CommandHandler("cancel", _setannounce_cancel)],
+    per_message=False,
+)
 
 application.add_handler(CommandHandler(
     ["guess", "protecc", "collect", "grab", "hunt"], guess, block=False
 ))
-application.add_handler(CommandHandler("fav",       fav,       block=False))
-application.add_handler(CommandHandler("forcedrop", forcedrop, block=False))
+application.add_handler(CommandHandler("fav",            fav,              block=False))
+application.add_handler(CommandHandler("forcedrop",      forcedrop,        block=False))
+application.add_handler(CommandHandler("cleardropannounce", cleardropannounce, block=False))
+application.add_handler(_announce_conv)
 application.add_handler(MessageHandler(
     filters.ChatType.GROUPS & ~filters.COMMAND,
     message_counter,
