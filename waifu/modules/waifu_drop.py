@@ -165,31 +165,51 @@ async def _send_drop(chat_id: int, bot, forced_char: dict | None = None) -> None
     _is_file_upload = not isinstance(img_to_send, str)
     _write_timeout  = 60 if _is_file_upload else 10
 
-    try:
-        msg = await bot.send_photo(
-            chat_id=chat_id,
-            photo=img_to_send,
-            caption=(
-                "✨ <b>A new character appeared!</b>\n\n"
-                "<i>Use /guess [name] to add them to your harem!</i>"
-            ),
-            parse_mode=ParseMode.HTML,
-            write_timeout=_write_timeout,
-            read_timeout=30,
-        )
-        LOGGER.info("Drop sent to chat %s: %s (%s)",
-                    chat_id, char["name"], char.get("rarity", "?"))
+    media_type   = char.get("media_type", "photo")
+    drop_caption = (
+        "✨ <b>A new character appeared!</b>\n\n"
+        "<i>Use /guess [name] to add them to your harem!</i>"
+    )
 
-        # ── Save THIS bot's file_id so inline CachedPhoto always works ──────────
-        # file_ids never expire; CDN URLs do (≈1 hr) — always store file_id.
-        if msg.photo:
-            new_fid = msg.photo[-1].file_id
-            if new_fid != char.get("img_url"):
-                char["img_url"] = new_fid
-                await collection.update_one(
-                    {"id": char["id"]},
-                    {"$set": {"img_url": new_fid}},
-                )
+    try:
+        if media_type == "video":
+            msg = await bot.send_video(
+                chat_id=chat_id,
+                video=img_to_send,
+                caption=drop_caption,
+                parse_mode=ParseMode.HTML,
+                write_timeout=_write_timeout,
+                read_timeout=60,
+            )
+            # Save permanent file_id
+            if msg.video:
+                new_fid = msg.video.file_id
+                if new_fid != char.get("img_url"):
+                    char["img_url"] = new_fid
+                    await collection.update_one(
+                        {"id": char["id"]},
+                        {"$set": {"img_url": new_fid}},
+                    )
+        else:
+            msg = await bot.send_photo(
+                chat_id=chat_id,
+                photo=img_to_send,
+                caption=drop_caption,
+                parse_mode=ParseMode.HTML,
+                write_timeout=_write_timeout,
+                read_timeout=30,
+            )
+            if msg.photo:
+                new_fid = msg.photo[-1].file_id
+                if new_fid != char.get("img_url"):
+                    char["img_url"] = new_fid
+                    await collection.update_one(
+                        {"id": char["id"]},
+                        {"$set": {"img_url": new_fid}},
+                    )
+
+        LOGGER.info("Drop sent to chat %s: %s (%s) [%s]",
+                    chat_id, char["name"], char.get("rarity", "?"), media_type)
 
     except Exception as e:
         _active_char.pop(chat_id, None)
@@ -453,14 +473,24 @@ async def guess(update: Update, context: CallbackContext) -> None:
         f'{sold_out_line}'
     )
 
-    photo_id = char.get("img_url")
-    if photo_id:
-        await update.message.reply_photo(
-            photo=photo_id,
-            caption=caption,
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb,
-        )
+    media_id   = char.get("img_url")
+    char_mtype = char.get("media_type", "photo")
+
+    if media_id:
+        if char_mtype == "video":
+            await update.message.reply_video(
+                video=media_id,
+                caption=caption,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+            )
+        else:
+            await update.message.reply_photo(
+                photo=media_id,
+                caption=caption,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+            )
     else:
         await update.message.reply_text(
             caption,

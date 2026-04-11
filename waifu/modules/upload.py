@@ -43,15 +43,28 @@ _URL_RE = re.compile(
 )
 
 
-def _get_photo_from_msg(msg) -> str | None:
-    """Return file_id (for direct photos) or None."""
+def _get_media_from_msg(msg) -> tuple[str, str] | tuple[None, None]:
+    """Return (file_id, media_type) where media_type is 'photo' or 'video', or (None, None)."""
     if not msg:
-        return None
+        return None, None
     if msg.photo:
-        return msg.photo[-1].file_id
-    if msg.document and msg.document.mime_type and msg.document.mime_type.startswith("image/"):
-        return msg.document.file_id
-    return None
+        return msg.photo[-1].file_id, "photo"
+    if msg.video:
+        return msg.video.file_id, "video"
+    if msg.animation:
+        return msg.animation.file_id, "video"
+    if msg.document and msg.document.mime_type:
+        mt = msg.document.mime_type
+        if mt.startswith("image/"):
+            return msg.document.file_id, "photo"
+        if mt.startswith("video/"):
+            return msg.document.file_id, "video"
+    return None, None
+
+
+def _get_photo_from_msg(msg) -> str | None:
+    fid, _ = _get_media_from_msg(msg)
+    return fid
 
 
 def _extract_url(msg) -> str | None:
@@ -101,10 +114,10 @@ async def upload_start(update: Update, context: CallbackContext) -> int:
     context.user_data.clear()
     await update.message.reply_text(
         "📸 <b>Upload — Step 1/4</b>\n\n"
-        "Character ပုံ ၂ မျိုးပေးနိုင်တယ်:\n"
-        "• ပုံ တိုက်ရိုက်ပို့ (ဓာတ်ပုံ / document)\n"
-        "• jpg/png URL link paste လုပ်\n"
-        "  <i>ဥပမာ: https://example.com/char.jpg</i>\n\n"
+        "Character ပုံ <b>သို့မဟုတ်</b> 🎬 <b>Video (AMV)</b> ပို့နိုင်တယ်:\n"
+        "• 📷 Photo တိုက်ရိုက်ပို့\n"
+        "• 🎬 Video / GIF / Animation တိုက်ရိုက်ပို့\n"
+        "• jpg/png URL link paste လုပ်\n\n"
         "❌ ပယ်ဖျက်ရန် /cancel",
         parse_mode=ParseMode.HTML,
     )
@@ -112,27 +125,35 @@ async def upload_start(update: Update, context: CallbackContext) -> int:
 
 
 async def step_photo(update: Update, context: CallbackContext) -> int:
-    """Receive photo (direct file) or jpg/png URL link."""
+    """Receive photo/video (direct file) or jpg/png URL link."""
     if not _is_sudo(update.effective_user.id):
         return ConversationHandler.END
 
-    # Try direct photo/document first
-    img = _get_photo_from_msg(update.message)
+    # Try direct photo/video/document first
+    img, media_type = _get_media_from_msg(update.message)
 
-    # Fallback: URL link in text message
+    # Fallback: URL link in text message (photo only)
     if not img:
         img = _extract_url(update.message)
+        if img:
+            media_type = "photo"
 
     if not img:
         await update.message.reply_text(
-            "❌ ပုံ တိုက်ရိုက်ပို့ (သို့) jpg/png URL link ပေး\n\n"
-            "<i>ဥပမာ URL: https://example.com/image.jpg</i>",
+            "❌ ပုံ သို့ Video တိုက်ရိုက်ပို့ (သို့) jpg/png URL link ပေး",
             parse_mode=ParseMode.HTML,
         )
         return WAIT_PHOTO
 
-    context.user_data['photo'] = img
-    src = "🔗 URL link" if img.startswith("http") else "📷 ပုံ"
+    context.user_data['photo']      = img
+    context.user_data['media_type'] = media_type
+    if media_type == "video":
+        src = "🎬 Video/AMV"
+    elif img.startswith("http"):
+        src = "🔗 URL link"
+    else:
+        src = "📷 ပုံ"
+
     await update.message.reply_text(
         f"✅ <b>Step 2/4 — Character Name</b>  ({src})\n\n"
         "Character အမည် ရိုက်ပေး\n"
@@ -234,31 +255,33 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
             "❌ 1 အထက် ဂဏန်းတစ်ခု ရိုက်ထည့်ပေး (ဥပမာ: 10)")
         return WAIT_LIMIT
 
-    limit = int(text)
-    photo = context.user_data.get('photo')
-    name  = context.user_data.get('name')
-    anime = context.user_data.get('anime')
-    rarity= context.user_data.get('rarity')
+    limit      = int(text)
+    photo      = context.user_data.get('photo')
+    name       = context.user_data.get('name')
+    anime      = context.user_data.get('anime')
+    rarity     = context.user_data.get('rarity')
+    media_type = context.user_data.get('media_type', 'photo')
 
     if not all([photo, name, anime, rarity]):
         await update.message.reply_text("❌ Session ကုန်သွားတယ်။ /upload ထပ်ကြိုးစား")
         context.user_data.clear()
         return ConversationHandler.END
 
-    # ── Auto-store photo in FILE_STORE_CHAT → get this bot's own file_id ─────
-    # CachedPhoto in inline queries only works with THIS bot's file_ids.
-    # Sending the photo through our bot gives us a permanent, bot-owned file_id.
-    img_url    = photo
-    bot_local  = update.get_bot()
+    # ── Auto-store in FILE_STORE_CHAT → get this bot's own file_id ───────────
+    img_url   = photo
+    bot_local = update.get_bot()
     store_chat = Config.FILE_STORE_CHAT_ID
 
-    # If a FILE_STORE_CHAT is configured, push the photo through it so we get
-    # THIS bot's own file_id.  file_ids never expire; Telegram CDN URLs do.
     if not photo.startswith("http") and store_chat:
         try:
-            stored_msg = await bot_local.send_photo(chat_id=store_chat, photo=photo)
-            if stored_msg.photo:
-                img_url = stored_msg.photo[-1].file_id   # permanent file_id
+            if media_type == "video":
+                stored_msg = await bot_local.send_video(chat_id=store_chat, video=photo)
+                if stored_msg.video:
+                    img_url = stored_msg.video.file_id
+            else:
+                stored_msg = await bot_local.send_photo(chat_id=store_chat, photo=photo)
+                if stored_msg.photo:
+                    img_url = stored_msg.photo[-1].file_id
         except Exception as store_err:
             from waifu import LOGGER
             LOGGER.warning("FILE_STORE push failed, using original file_id: %s", store_err)
@@ -266,6 +289,7 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
     char_id = await _next_id()
     char = {
         "img_url":       img_url,
+        "media_type":    media_type,
         "name":          name,
         "anime":         anime,
         "rarity":        rarity,
@@ -289,19 +313,23 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
         # ── Notify CHARA_CHANNEL_ID ───────────────────────────────────────────
         if CHARA_CHANNEL_ID:
             u = update.effective_user
-            mention = (
-                f'<a href="tg://user?id={u.id}">{escape(u.first_name)}</a>'
-            )
-            chan_cap = (
-                f"•{mention}• updated image for waifu <b>{escape(name)}</b>"
-            )
+            mention  = f'<a href="tg://user?id={u.id}">{escape(u.first_name)}</a>'
+            chan_cap = f"•{mention}• uploaded <b>{escape(name)}</b>"
             try:
-                await bot_local.send_photo(
-                    chat_id=CHARA_CHANNEL_ID,
-                    photo=img_url,
-                    caption=chan_cap,
-                    parse_mode=ParseMode.HTML,
-                )
+                if media_type == "video":
+                    await bot_local.send_video(
+                        chat_id=CHARA_CHANNEL_ID,
+                        video=img_url,
+                        caption=chan_cap,
+                        parse_mode=ParseMode.HTML,
+                    )
+                else:
+                    await bot_local.send_photo(
+                        chat_id=CHARA_CHANNEL_ID,
+                        photo=img_url,
+                        caption=chan_cap,
+                        parse_mode=ParseMode.HTML,
+                    )
             except Exception as ch_err:
                 from waifu import LOGGER
                 LOGGER.warning("Channel notify failed: %s", ch_err)
@@ -589,17 +617,19 @@ async def update_char(upd: Update, context: CallbackContext) -> None:
 
 # ── Register handlers ─────────────────────────────────────────────────────────
 
-_PHOTO_FILTER = filters.PHOTO | filters.Document.IMAGE
-_PHOTO_OR_URL = _PHOTO_FILTER | (filters.TEXT & ~filters.COMMAND)
+_PHOTO_FILTER  = filters.PHOTO | filters.Document.IMAGE
+_VIDEO_FILTER  = filters.VIDEO | filters.ANIMATION | filters.Document.VIDEO
+_MEDIA_FILTER  = _PHOTO_FILTER | _VIDEO_FILTER
+_PHOTO_OR_URL  = _MEDIA_FILTER | (filters.TEXT & ~filters.COMMAND)
 
 _upload_conv = ConversationHandler(
     entry_points=[
         CommandHandler("upload", upload_start),
-        # Direct photo in PM starts the conversation (no accidental trigger on text)
-        MessageHandler(_PHOTO_FILTER & filters.ChatType.PRIVATE, step_photo),
+        # Direct photo/video in PM starts the conversation
+        MessageHandler(_MEDIA_FILTER & filters.ChatType.PRIVATE, step_photo),
     ],
     states={
-        # In WAIT_PHOTO: accept both photo AND URL text
+        # In WAIT_PHOTO: accept photo, video, OR URL text
         WAIT_PHOTO:  [MessageHandler(_PHOTO_OR_URL, step_photo)],
         WAIT_NAME:   [MessageHandler(filters.TEXT & ~filters.COMMAND, step_name)],
         WAIT_ANIME:  [MessageHandler(filters.TEXT & ~filters.COMMAND, step_anime)],
