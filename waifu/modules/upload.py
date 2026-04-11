@@ -22,7 +22,7 @@ from telegram.ext import (
     ConversationHandler, MessageHandler, filters,
 )
 
-from waifu import application, collection, db, sudo_users, OWNER_ID, CHARA_CHANNEL_ID
+from waifu import application, collection, user_collection, db, sudo_users, OWNER_ID, CHARA_CHANNEL_ID
 from waifu.config import Config
 
 RARITY_MAP  = Config.RARITY_MAP
@@ -511,12 +511,28 @@ async def delete(update: Update, context: CallbackContext) -> None:
             "Usage: <code>/delete ID</code>", parse_mode=ParseMode.HTML)
         return
 
-    char = await collection.find_one_and_delete({"id": context.args[0]})
+    char_id = context.args[0]
+
+    # Remove from main character collection
+    char = await collection.find_one_and_delete({"id": char_id})
     if not char:
         await update.message.reply_text("❌ Character မတွေ့ဘူး")
         return
+
+    # Count how many users have this character before removing
+    affected_users = await user_collection.count_documents(
+        {"characters": {"$elemMatch": {"id": char_id}}}
+    )
+
+    # Remove character from ALL users' harem arrays
+    pull_result = await user_collection.update_many(
+        {"characters.id": char_id},
+        {"$pull": {"characters": {"id": char_id}}},
+    )
+
     await update.message.reply_text(
-        f"✅ <b>{char['name']}</b> (<code>{char['id']}</code>) ဖျက်ပြီ",
+        f"✅ <b>{escape(char['name'])}</b> (<code>{char['id']}</code>) ဖျက်ပြီ\n"
+        f"👥 {affected_users} ဦးရဲ့ harem ကနေ ထုတ်လိုက်ပြီ",
         parse_mode=ParseMode.HTML,
     )
 
