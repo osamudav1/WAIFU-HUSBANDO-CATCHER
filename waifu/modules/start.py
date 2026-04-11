@@ -277,11 +277,29 @@ async def button(update: Update, context: CallbackContext) -> None:
     if not data.startswith("help:"):
         return
 
-    page = data[5:]  # "game", "economy", ..., "home"
+    page    = data[5:]  # "game", "economy", ..., "home"
+    uid     = q.from_user.id
+    is_group = q.message.chat.type in ("group", "supergroup")
+
+    # In groups: "home" always shows the slim 4-button group keyboard
+    if page == "home" and is_group:
+        grp_caption = (
+            "🌸 <b>ᴡᴀɪꜰᴜ ᴄᴀᴛᴄʜᴇʀ</b> 🌸\n\n"
+            "ᴄʜᴀʀᴀᴄᴛᴇʀꜱ ᴅʀᴏᴘ ʜᴇʀᴇ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ.\n"
+            "ᴜꜱᴇ /ɢᴜᴇꜱꜱ ᴛᴏ ᴄʟᴀɪᴍ ᴛʜᴇᴍ!"
+        )
+        try:
+            await q.edit_message_caption(caption=grp_caption, reply_markup=_group_kb(uid), parse_mode=ParseMode.HTML)
+        except Exception:
+            try:
+                await q.edit_message_text(grp_caption, reply_markup=_group_kb(uid), parse_mode=ParseMode.HTML)
+            except Exception:
+                pass
+        return
 
     try:
         if page == "home":
-            await q.edit_message_caption(caption=WELCOME, reply_markup=_main_kb(), parse_mode=ParseMode.HTML)
+            await q.edit_message_caption(caption=WELCOME, reply_markup=_main_kb(uid), parse_mode=ParseMode.HTML)
         elif page in SECTIONS:
             await q.edit_message_caption(
                 caption=SECTIONS[page],
@@ -291,7 +309,7 @@ async def button(update: Update, context: CallbackContext) -> None:
     except Exception:
         try:
             if page == "home":
-                await q.edit_message_text(WELCOME, reply_markup=_main_kb(), parse_mode=ParseMode.HTML)
+                await q.edit_message_text(WELCOME, reply_markup=_main_kb(uid), parse_mode=ParseMode.HTML)
             elif page in SECTIONS:
                 await q.edit_message_text(
                     SECTIONS[page],
