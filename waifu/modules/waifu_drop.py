@@ -377,8 +377,15 @@ async def guess(update: Update, context: CallbackContext) -> None:
         if is_sold_out else ""
     )
 
+    # Total unique characters owned (after this catch)
+    updated_user = await user_collection.find_one({"id": user_id}, {"characters": 1})
+    total_owned  = len({c["id"] for c in (updated_user or {}).get("characters", [])})
+
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📖 My Harem", callback_data="act:harem")],
+        [InlineKeyboardButton(
+            f"🔱 Waifus ({total_owned})",
+            switch_inline_query_current_chat=f"harem.{user_id}",
+        )],
     ])
 
     caption = (

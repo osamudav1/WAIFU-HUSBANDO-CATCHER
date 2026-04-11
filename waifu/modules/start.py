@@ -90,7 +90,12 @@ SECTION_LABELS = {
 }
 
 
-def _main_kb() -> InlineKeyboardMarkup:
+def _main_kb(uid: int | None = None) -> InlineKeyboardMarkup:
+    harem_btn = (
+        InlineKeyboardButton("🔱 My Waifus", switch_inline_query_current_chat=f"harem.{uid}")
+        if uid else
+        InlineKeyboardButton("🔱 My Waifus", callback_data="act:harem")
+    )
     rows = [
         [InlineKeyboardButton("➕ Add Me to Group", url=f"https://t.me/{BOT_USERNAME}?startgroup=new")],
         [
@@ -99,7 +104,7 @@ def _main_kb() -> InlineKeyboardMarkup:
         ],
         # Quick actions
         [
-            InlineKeyboardButton("📚 My Harem", callback_data="act:harem"),
+            harem_btn,
             InlineKeyboardButton("👤 Profile",  callback_data="act:profile"),
         ],
         # Help sections
@@ -115,8 +120,13 @@ def _main_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def _owner_kb() -> InlineKeyboardMarkup:
+def _owner_kb(uid: int | None = None) -> InlineKeyboardMarkup:
     """Extra panel shown ONLY to the owner in their PM."""
+    harem_btn = (
+        InlineKeyboardButton("🔱 My Waifus", switch_inline_query_current_chat=f"harem.{uid}")
+        if uid else
+        InlineKeyboardButton("🔱 My Waifus", callback_data="act:harem")
+    )
     rows = [
         [InlineKeyboardButton("➕ Add Me to Group", url=f"https://t.me/{BOT_USERNAME}?startgroup=new")],
         [
@@ -125,7 +135,7 @@ def _owner_kb() -> InlineKeyboardMarkup:
         ],
         # Quick actions
         [
-            InlineKeyboardButton("📚 My Harem", callback_data="act:harem"),
+            harem_btn,
             InlineKeyboardButton("👤 Profile",  callback_data="act:profile"),
         ],
         [
@@ -217,13 +227,13 @@ async def start(update: Update, context: CallbackContext) -> None:
 
     if is_pm and is_owner:
         caption = OWNER_WELCOME
-        markup  = _owner_kb()
+        markup  = _owner_kb(u.id)
     elif is_pm:
         caption = WELCOME
-        markup  = _main_kb()
+        markup  = _main_kb(u.id)
     else:
         caption = "🎴 I'm alive! DM me for info."
-        markup  = _main_kb()
+        markup  = _main_kb(u.id)
 
     if photo:
         await context.bot.send_photo(
