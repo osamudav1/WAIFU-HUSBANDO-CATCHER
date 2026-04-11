@@ -1,12 +1,14 @@
 """
 modules/economy.py — Daily coins, balance, and marketplace.
+
+Market is card-style: one listing per page with character photo.
 """
 import math
 import time
 from bson import ObjectId
 from html import escape
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
 from telegram.constants import ParseMode
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
@@ -14,7 +16,7 @@ from waifu import application, user_collection, market_collection
 from waifu.config import Config
 
 _DAILY_COOLDOWN = 86_400   # 24 hours in seconds
-_PAGE = 8
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -35,6 +37,67 @@ async def _ensure_user(user_id: int, u) -> dict:
         }
         await user_collection.insert_one(doc)
     return doc
+
+
+# ── Rarity badge map ──────────────────────────────────────────────────────────
+
+_RARITY_BADGE = {
+    "⚪ Common":            "⚪",
+    "🟣 Rare":              "🟣",
+    "🟡 Legendary":         "🟡",
+    "🔮 Mythical":          "🔮",
+    "💮 Special Edition":   "💮",
+    "🌌 Universal Limited": "🌌",
+}
+
+
+# ── Market card builder ───────────────────────────────────────────────────────
+
+async def _market_card(page: int) -> tuple[str, str | None, InlineKeyboardMarkup] | None:
+    """
+    Returns (caption, photo_file_id_or_none, keyboard) for a market page,
+    or None if market is empty.
+    """
+    total = await market_collection.count_documents({})
+    if total == 0:
+        return None
+
+    page = max(0, min(page, total - 1))
+    lst  = await market_collection.find({}).sort("price", 1).skip(page).limit(1).to_list(1)
+    if not lst:
+        return None
+
+    listing = lst[0]
+    char    = listing["char"]
+    rarity  = char.get("rarity", "?")
+    badge   = _RARITY_BADGE.get(rarity, "🎴")
+
+    caption = (
+        f"🏪 <b>Market</b>  [{page+1} / {total}]\n\n"
+        f"{badge} <b>{escape(char['name'])}</b>\n"
+        f"📺 Aɴɪᴍᴇ: {escape(char.get('anime', '?'))}\n"
+        f"✨ Rᴀʀɪᴛʏ: {rarity}\n\n"
+        f"💰 Price: <b>{listing['price']:,} 🪙</b>\n"
+        f"👤 Seller: <b>{escape(listing['seller_name'])}</b>\n"
+        f"🆔 <code>{listing['_id']}</code>"
+    )
+
+    # Nav row
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"mkt:page:{page-1}"))
+    nav.append(InlineKeyboardButton(f"{page+1} / {total}", callback_data="noop"))
+    if page < total - 1:
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"mkt:page:{page+1}"))
+
+    buy_btn = InlineKeyboardButton(
+        f"🛒 Buy  {listing['price']:,} 🪙",
+        callback_data=f"mkt:buy:{listing['_id']}:{page}",
+    )
+    kb = InlineKeyboardMarkup([nav, [buy_btn]])
+
+    photo = char.get("img_url")
+    return caption, photo, kb
 
 
 # ── /balance ──────────────────────────────────────────────────────────────────
@@ -128,76 +191,173 @@ async def sell(update: Update, context: CallbackContext) -> None:
 # ── /market ───────────────────────────────────────────────────────────────────
 
 async def market(update: Update, context: CallbackContext, page: int = 0) -> None:
-    args  = context.args if hasattr(context, "args") and context.args else []
+    args = context.args if hasattr(context, "args") and context.args else []
     if args and args[0].isdigit():
         page = int(args[0]) - 1
 
-    total   = await market_collection.count_documents({})
-    if total == 0:
+    result = await _market_card(page)
+    if not result:
         await update.message.reply_text("🏪 The market is empty right now.")
         return
 
-    total_pages = max(1, math.ceil(total / _PAGE))
-    page = max(0, min(page, total_pages - 1))
+    caption, photo, kb = result
 
-    listings = await market_collection.find({}).sort("price", 1).skip(page * _PAGE).limit(_PAGE).to_list(_PAGE)
+    if photo:
+        try:
+            await update.message.reply_photo(
+                photo=photo, caption=caption,
+                parse_mode=ParseMode.HTML, reply_markup=kb,
+            )
+            return
+        except Exception:
+            pass
 
-    lines = [f"🏪 <b>Market</b>  (page {page+1}/{total_pages})\n"]
-    for lst in listings:
-        char  = lst["char"]
-        lines.append(
-            f"{char.get('rarity','🎴')}  <b>{escape(char['name'])}</b>  "
-            f"— <b>{lst['price']:,} 🪙</b>\n"
-            f"   Seller: {escape(lst['seller_name'])}  |  "
-            f"<code>/buy {lst['_id']}</code>"
+    await update.message.reply_text(caption, parse_mode=ParseMode.HTML, reply_markup=kb)
+
+
+# ── Market callback (page nav + inline buy) ───────────────────────────────────
+
+async def market_cb(update: Update, context: CallbackContext) -> None:
+    q    = update.callback_query
+    uid  = q.from_user.id
+    data = q.data   # mkt:page:<n> | mkt:buy:<oid>:<page>
+
+    parts = data.split(":")
+
+    # ── Page navigation ───────────────────────────────────────────────────────
+    if parts[1] == "page":
+        await q.answer()
+        page   = int(parts[2])
+        result = await _market_card(page)
+        if not result:
+            await q.answer("Market is empty!", show_alert=True)
+            return
+
+        caption, photo, kb = result
+
+        if photo:
+            try:
+                await q.edit_message_media(
+                    media=InputMediaPhoto(media=photo, caption=caption, parse_mode=ParseMode.HTML),
+                    reply_markup=kb,
+                )
+                return
+            except Exception:
+                pass
+        try:
+            await q.edit_message_caption(caption=caption, parse_mode=ParseMode.HTML, reply_markup=kb)
+        except Exception:
+            try:
+                await q.edit_message_text(caption, parse_mode=ParseMode.HTML, reply_markup=kb)
+            except Exception:
+                pass
+        return
+
+    # ── Inline buy ────────────────────────────────────────────────────────────
+    if parts[1] == "buy":
+        listing_id_str = parts[2]
+        back_page      = int(parts[3]) if len(parts) > 3 else 0
+
+        try:
+            oid = ObjectId(listing_id_str)
+        except Exception:
+            await q.answer("❌ Invalid listing ID.", show_alert=True)
+            return
+
+        listing = await market_collection.find_one({"_id": oid})
+        if not listing:
+            await q.answer("❌ Listing not found or already sold!", show_alert=True)
+            # Refresh to next available page
+            total = await market_collection.count_documents({})
+            if total == 0:
+                try:
+                    await q.edit_message_caption(
+                        caption="🏪 The market is now empty.",
+                        reply_markup=InlineKeyboardMarkup([]),
+                    )
+                except Exception:
+                    pass
+            else:
+                new_page = min(back_page, total - 1)
+                result   = await _market_card(new_page)
+                if result:
+                    caption, photo, kb = result
+                    if photo:
+                        try:
+                            await q.edit_message_media(
+                                media=InputMediaPhoto(media=photo, caption=caption, parse_mode=ParseMode.HTML),
+                                reply_markup=kb,
+                            )
+                            return
+                        except Exception:
+                            pass
+                    try:
+                        await q.edit_message_caption(caption=caption, parse_mode=ParseMode.HTML, reply_markup=kb)
+                    except Exception:
+                        pass
+            return
+
+        if listing["seller_id"] == uid:
+            await q.answer("❌ You can't buy your own listing!", show_alert=True)
+            return
+
+        buyer = await user_collection.find_one({"id": uid})
+        coins = buyer.get("coins", 0) if buyer else 0
+        if coins < listing["price"]:
+            await q.answer(
+                f"❌ Coins မလုံ! ({coins:,} / {listing['price']:,} 🪙)",
+                show_alert=True,
+            )
+            return
+
+        # Atomic exchange
+        await user_collection.update_one(
+            {"id": uid},
+            {"$inc": {"coins": -listing["price"]}, "$push": {"characters": listing["char"]}},
+        )
+        await user_collection.update_one(
+            {"id": listing["seller_id"]},
+            {"$inc": {"coins": listing["price"]}},
+        )
+        await market_collection.delete_one({"_id": oid})
+
+        char = listing["char"]
+        await q.answer(
+            f"✅ {char['name']} ကို {listing['price']:,} 🪙 နဲ့ ဝယ်ပြီး!",
+            show_alert=True,
         )
 
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton("⬅️", callback_data=f"market:{page-1}"))
-    nav.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="noop"))
-    if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("➡️", callback_data=f"market:{page+1}"))
-
-    kb = InlineKeyboardMarkup([nav] if nav else [])
-    await update.message.reply_text(
-        "\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb)
-
-
-async def market_page_cb(update: Update, context: CallbackContext) -> None:
-    q = update.callback_query
-    await q.answer()
-    page = int(q.data.split(":")[1])
-
-    total       = await market_collection.count_documents({})
-    total_pages = max(1, math.ceil(total / _PAGE))
-    page        = max(0, min(page, total_pages - 1))
-    listings    = await market_collection.find({}).sort("price", 1).skip(page * _PAGE).limit(_PAGE).to_list(_PAGE)
-
-    lines = [f"🏪 <b>Market</b>  (page {page+1}/{total_pages})\n"]
-    for lst in listings:
-        char = lst["char"]
-        lines.append(
-            f"{char.get('rarity','🎴')}  <b>{escape(char['name'])}</b>  "
-            f"— <b>{lst['price']:,} 🪙</b>\n"
-            f"   Seller: {escape(lst['seller_name'])}  |  "
-            f"<code>/buy {lst['_id']}</code>"
-        )
-
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton("⬅️", callback_data=f"market:{page-1}"))
-    nav.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="noop"))
-    if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("➡️", callback_data=f"market:{page+1}"))
-    kb = InlineKeyboardMarkup([nav])
-    try:
-        await q.edit_message_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb)
-    except Exception:
-        pass
+        # Refresh card view to next listing
+        total = await market_collection.count_documents({})
+        if total == 0:
+            try:
+                await q.edit_message_caption(
+                    caption="🏪 The market is now empty.",
+                    reply_markup=InlineKeyboardMarkup([]),
+                )
+            except Exception:
+                pass
+        else:
+            new_page = min(back_page, total - 1)
+            result   = await _market_card(new_page)
+            if result:
+                caption, photo, kb = result
+                if photo:
+                    try:
+                        await q.edit_message_media(
+                            media=InputMediaPhoto(media=photo, caption=caption, parse_mode=ParseMode.HTML),
+                            reply_markup=kb,
+                        )
+                        return
+                    except Exception:
+                        pass
+                try:
+                    await q.edit_message_caption(caption=caption, parse_mode=ParseMode.HTML, reply_markup=kb)
+                except Exception:
+                    pass
 
 
-# ── /buy ──────────────────────────────────────────────────────────────────────
+# ── /buy (direct by listing ID) ───────────────────────────────────────────────
 
 async def buy(update: Update, context: CallbackContext) -> None:
     u = update.effective_user
@@ -227,12 +387,14 @@ async def buy(update: Update, context: CallbackContext) -> None:
         )
         return
 
-    # Atomic exchange
-    await user_collection.update_one({"id": u.id},
-        {"$inc": {"coins": -listing["price"]},
-         "$push": {"characters": listing["char"]}})
-    await user_collection.update_one({"id": listing["seller_id"]},
-        {"$inc": {"coins": listing["price"]}})
+    await user_collection.update_one(
+        {"id": u.id},
+        {"$inc": {"coins": -listing["price"]}, "$push": {"characters": listing["char"]}},
+    )
+    await user_collection.update_one(
+        {"id": listing["seller_id"]},
+        {"$inc": {"coins": listing["price"]}},
+    )
     await market_collection.delete_one({"_id": oid})
 
     char = listing["char"]
@@ -270,10 +432,12 @@ async def delist(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text("✅ Listing removed. Character returned to your harem.")
 
 
+# ── Register handlers ─────────────────────────────────────────────────────────
+
 application.add_handler(CommandHandler("balance", balance, block=False))
 application.add_handler(CommandHandler("daily",   daily,   block=False))
 application.add_handler(CommandHandler("sell",    sell,    block=False))
 application.add_handler(CommandHandler("market",  market,  block=False))
 application.add_handler(CommandHandler("buy",     buy,     block=False))
 application.add_handler(CommandHandler("delist",  delist,  block=False))
-application.add_handler(CallbackQueryHandler(market_page_cb, pattern=r"^market:\d+$", block=False))
+application.add_handler(CallbackQueryHandler(market_cb, pattern=r"^mkt:", block=False))
