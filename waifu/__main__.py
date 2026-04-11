@@ -28,13 +28,8 @@ async def _post_init(application) -> None:
     await create_indexes()
     LOGGER.info("DB indexes ensured.")
 
-    # ── Startup notification to ALL known groups ─────────────────────────────
-    from waifu import (
-        top_global_groups_collection,
-        group_user_totals_collection,
-        user_totals_collection,
-    )
-    import asyncio as _asyncio
+    # ── Startup notification → Owner DM only ─────────────────────────────────
+    from waifu import OWNER_ID
 
     startup_msg = (
         "╔══════════════════════╗\n"
@@ -46,36 +41,11 @@ async def _post_init(application) -> None:
         "━━━━━━━━━━━━━━━━━━━━━━━━"
     )
 
-    g1 = set(await top_global_groups_collection.distinct("group_id"))
-    g2 = set(await group_user_totals_collection.distinct("group_id"))
-    g3 = set(await user_totals_collection.distinct("chat_id"))
-    all_groups = list(g1 | g2 | g3)
-    # Always include main GROUP_ID
-    if GROUP_ID and GROUP_ID not in all_groups:
-        all_groups.append(GROUP_ID)
-
-    ok = fail = 0
-    for gid in all_groups:
-        try:
-            await application.bot.send_message(gid, startup_msg, parse_mode="HTML")
-            ok += 1
-        except Exception as e:
-            err = str(e)
-            if "New chat id:" in err:
-                import re as _re
-                m = _re.search(r"New chat id:\s*(-?\d+)", err)
-                if m:
-                    new_id = int(m.group(1))
-                    try:
-                        await application.bot.send_message(new_id, startup_msg, parse_mode="HTML")
-                        ok += 1
-                        continue
-                    except Exception:
-                        pass
-            fail += 1
-        await _asyncio.sleep(0.05)
-
-    LOGGER.info("Startup message sent: %d ok, %d failed (total %d groups)", ok, fail, len(all_groups))
+    try:
+        await application.bot.send_message(OWNER_ID, startup_msg, parse_mode="HTML")
+        LOGGER.info("Startup message sent to owner (%s)", OWNER_ID)
+    except Exception as e:
+        LOGGER.warning("Could not send startup message to owner: %s", e)
 
 
 def main() -> None:
