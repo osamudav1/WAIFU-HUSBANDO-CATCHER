@@ -28,7 +28,14 @@ async def _post_init(application) -> None:
     await create_indexes()
     LOGGER.info("DB indexes ensured.")
 
-    # ── Startup notification to main group ───────────────────────────────────
+    # ── Startup notification to ALL known groups ─────────────────────────────
+    from waifu import (
+        top_global_groups_collection,
+        group_user_totals_collection,
+        user_totals_collection,
+    )
+    import asyncio as _asyncio
+
     startup_msg = (
         "╔══════════════════════╗\n"
         "║  🌸  <b>ᴡᴀɪꜰᴜ ʙᴏᴛ ᴏɴʟɪɴᴇ</b>  🌸  ║\n"
@@ -38,26 +45,37 @@ async def _post_init(application) -> None:
         "🏆 ᴄᴏᴍᴘᴇᴛᴇ • ᴄᴏʟʟᴇᴄᴛ • ᴄᴏɴQᴜᴇʀ\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━"
     )
-    target_gid = GROUP_ID
-    for attempt in range(2):
+
+    g1 = set(await top_global_groups_collection.distinct("group_id"))
+    g2 = set(await group_user_totals_collection.distinct("group_id"))
+    g3 = set(await user_totals_collection.distinct("chat_id"))
+    all_groups = list(g1 | g2 | g3)
+    # Always include main GROUP_ID
+    if GROUP_ID and GROUP_ID not in all_groups:
+        all_groups.append(GROUP_ID)
+
+    ok = fail = 0
+    for gid in all_groups:
         try:
-            await application.bot.send_message(
-                target_gid, startup_msg, parse_mode="HTML"
-            )
-            LOGGER.info("Startup message sent to group %s", target_gid)
-            break
+            await application.bot.send_message(gid, startup_msg, parse_mode="HTML")
+            ok += 1
         except Exception as e:
             err = str(e)
-            # Telegram returns the new supergroup ID in the error message
             if "New chat id:" in err:
                 import re as _re
                 m = _re.search(r"New chat id:\s*(-?\d+)", err)
-                if m and attempt == 0:
-                    target_gid = int(m.group(1))
-                    LOGGER.info("Group migrated → retrying with new ID %s", target_gid)
-                    continue
-            LOGGER.warning("Could not send startup message: %s", e)
-            break
+                if m:
+                    new_id = int(m.group(1))
+                    try:
+                        await application.bot.send_message(new_id, startup_msg, parse_mode="HTML")
+                        ok += 1
+                        continue
+                    except Exception:
+                        pass
+            fail += 1
+        await _asyncio.sleep(0.05)
+
+    LOGGER.info("Startup message sent: %d ok, %d failed (total %d groups)", ok, fail, len(all_groups))
 
 
 def main() -> None:
