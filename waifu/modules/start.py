@@ -326,7 +326,10 @@ async def action_callback(update: Update, context: CallbackContext) -> None:
     q   = update.callback_query
     uid = q.from_user.id
     act = q.data[4:]  # strip "act:"
-    await q.answer()
+
+    # daily & balance answer themselves with show_alert — don't pre-answer
+    if act not in ("daily", "balance"):
+        await q.answer()
 
     if act == "harem":
         from waifu.modules.harem import send_harem_card
