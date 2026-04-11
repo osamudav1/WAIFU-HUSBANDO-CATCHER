@@ -2,13 +2,10 @@ import re
 import time
 from html import escape
 from pymongo import ASCENDING
-from cachetools import TTLCache
-from telegram import InlineQueryResultPhoto, InlineQueryResultCachedPhoto, Update
+from telegram import InlineQueryResultCachedPhoto, InlineQueryResultArticle, InputTextMessageContent, Update
 from telegram.ext import CallbackContext, InlineQueryHandler
-from waifu import application, collection, db, user_collection
+from waifu import application, collection, db, user_collection, LOGGER
 
-_all_cache  = TTLCache(maxsize=1,     ttl=3600)
-_user_cache = TTLCache(maxsize=10000, ttl=60)
 _PAGE = 50
 
 
@@ -35,6 +32,11 @@ async def _batch_anime(animes: list) -> dict:
     return {d["_id"]: d["n"] async for d in collection.aggregate(pipeline)}
 
 
+def _is_tg_file_id(s: str) -> bool:
+    """True if looks like a Telegram file_id (not a URL)."""
+    return bool(s) and not s.startswith("http")
+
+
 # ── Main handler ──────────────────────────────────────────────────────────────
 
 async def inlinequery(update: Update, context: CallbackContext) -> None:
@@ -47,24 +49,16 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
     _is_user_query = any(raw.startswith(p) for p in _COLL_PREFIXES)
 
     if _is_user_query:
-        # ── User's personal collection ──────────────────────────────────────
+        # ── User's personal harem ────────────────────────────────────────────
         parts    = raw.split(" ", 1)
-        uid_part = parts[0].split(".", 1)[1]   # works for both prefixes
+        uid_part = parts[0].split(".", 1)[1]
         search   = parts[1].strip() if len(parts) > 1 else ""
 
         if uid_part.isdigit():
             uid = int(uid_part)
-            key = uid_part
 
-            # FIX 1: only use cache when the stored value is not None.
-            # Previously None was cached, so new players always got empty
-            # results for 60 seconds even after guessing their first character.
-            if key in _user_cache and _user_cache[key] is not None:
-                user = _user_cache[key]
-            else:
-                user = await user_collection.find_one({"id": uid})
-                if user:
-                    _user_cache[key] = user   # only cache real documents
+            # Always fetch fresh — avoids stale data after new catches
+            user = await user_collection.find_one({"id": uid})
 
             if user:
                 deduped = list({c["id"]: c for c in user.get("characters", [])}.values())
@@ -75,9 +69,7 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
                         if pat.search(c.get("name", "")) or pat.search(c.get("anime", ""))
                     ]
 
-                # ── Refresh img_url from main collection ──────────────────────
-                # User's copy may have stale file_ids from old bots.
-                # Fetch current img_url for all characters in one query.
+                # ── Refresh img_url from main collection (gets latest file_ids) ──
                 if deduped:
                     ids_needed = [c["id"] for c in deduped]
                     fresh_docs = await collection.find(
@@ -86,17 +78,19 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
                     ).to_list(len(ids_needed))
                     fresh_map = {d["id"]: d.get("img_url", "") for d in fresh_docs}
                     for c in deduped:
-                        if c["id"] in fresh_map:
-                            c["img_url"] = fresh_map[c["id"]]
+                        fresh = fresh_map.get(c["id"], "")
+                        if fresh:
+                            c["img_url"] = fresh
 
                 chars = deduped
+                LOGGER.info(
+                    "Inline harem uid=%s total=%d (after refresh) page_offset=%d",
+                    uid, len(chars), offset,
+                )
 
     else:
-        # ── Global catalogue search ─────────────────────────────────────────
+        # ── Global catalogue search ──────────────────────────────────────────
         if raw:
-            # FIX 2: use MongoDB $regex operator instead of a compiled Python
-            # re object. Motor's async driver doesn't reliably convert
-            # re.compile() objects into BSON regex across all driver versions.
             query = {
                 "$or": [
                     {"name":  {"$regex": re.escape(raw), "$options": "i"}},
@@ -105,28 +99,39 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
             }
             chars = await collection.find(query).to_list(5000)
         else:
-            if "all" in _all_cache:
-                chars = _all_cache["all"]
-            else:
-                chars = await collection.find({}).to_list(5000)
-                _all_cache["all"] = chars
+            chars = await collection.find({}).to_list(5000)
 
     # ── Paginate ──────────────────────────────────────────────────────────────
     page_chars  = chars[offset:offset + _PAGE]
     next_offset = str(offset + len(page_chars)) if len(page_chars) == _PAGE else ""
 
     if not page_chars:
-        await update.inline_query.answer([], cache_time=5)
+        # Show helpful "no results" card for harem queries
+        if _is_user_query:
+            no_res = [InlineQueryResultArticle(
+                id="no_chars",
+                title="📭 No characters with images yet",
+                description="Catch more characters or run /migrateimgs to fix images",
+                input_message_content=InputTextMessageContent(
+                    "📭 No characters with valid images found in this harem yet.\n"
+                    "Catch more characters in the group!"
+                ),
+            )]
+            await update.inline_query.answer(no_res, cache_time=5)
+        else:
+            await update.inline_query.answer([], cache_time=5)
         return
 
-    # ── Batch DB stats (2 queries total for the whole page) ───────────────────
+    # ── Batch DB stats ────────────────────────────────────────────────────────
     ids     = [c["id"]    for c in page_chars]
     animes  = list({c["anime"] for c in page_chars})
     g_count = await _batch_global(ids)
     a_total = await _batch_anime(animes)
 
-    # ── Build results ─────────────────────────────────────────────────────────
-    results = []
+    # ── Build results — only file_ids work reliably in inline mode ────────────
+    results       = []
+    skipped_no_fid = 0
+
     for c in page_chars:
         name    = escape(c.get("name",  "Unknown"))
         anime   = escape(c.get("anime", "Unknown"))
@@ -136,10 +141,10 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
             u_cnt = sum(1 for x in user.get("characters", []) if x["id"] == c["id"])
             u_an  = sum(1 for x in user.get("characters", []) if x["anime"] == c["anime"])
             db_an = a_total.get(c["anime"], "?")
-            uid   = user.get("id", "")
-            uname = escape(user.get("first_name", str(uid)))
+            uid_v = user.get("id", "")
+            uname = escape(user.get("first_name", str(uid_v)))
             cap   = (
-                f"<b><a href='tg://user?id={uid}'>{uname}</a>'s Character</b>\n\n"
+                f"<b><a href='tg://user?id={uid_v}'>{uname}</a>'s Character</b>\n\n"
                 f"🌸 <b>{name}</b> ×{u_cnt}\n"
                 f"📺 <b>{anime}</b> ({u_an}/{db_an})\n"
                 f"💎 {c.get('rarity', '')}\n"
@@ -157,26 +162,42 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
 
         result_id = f"{c['id']}_{time.time_ns()}"
 
-        # ── Use CachedPhoto for Telegram file_ids, Photo for HTTP URLs ────────
-        if img_raw.startswith("http"):
-            results.append(InlineQueryResultPhoto(
-                id=result_id,
-                photo_url=img_raw,
-                thumbnail_url=img_raw,
-                caption=cap,
-                parse_mode="HTML",
-            ))
-        elif img_raw:
-            # Telegram file_id — use CachedPhoto (no URL resolution needed)
+        if _is_tg_file_id(img_raw):
+            # Valid Telegram file_id → CachedPhoto (best quality, always works)
             results.append(InlineQueryResultCachedPhoto(
                 id=result_id,
                 photo_file_id=img_raw,
                 caption=cap,
                 parse_mode="HTML",
             ))
-        # skip if no image at all
+        else:
+            # Expired CDN URL or missing — skip; user should run /migrateimgs
+            skipped_no_fid += 1
 
-    await update.inline_query.answer(results, next_offset=next_offset, cache_time=5)
+    if skipped_no_fid:
+        LOGGER.info(
+            "Inline: skipped %d chars with no valid file_id (run /migrateimgs to fix)",
+            skipped_no_fid,
+        )
+
+    if not results:
+        no_res = [InlineQueryResultArticle(
+            id="no_img",
+            title="⚠️ Images not migrated yet",
+            description="Owner: run /migrateimgs in bot PM to fix character images",
+            input_message_content=InputTextMessageContent(
+                "⚠️ Character images need migration.\n"
+                "Owner should run /migrateimgs in bot PM."
+            ),
+        )]
+        await update.inline_query.answer(no_res, cache_time=5)
+        return
+
+    try:
+        await update.inline_query.answer(results, next_offset=next_offset, cache_time=5)
+        LOGGER.info("Inline: answered %d results", len(results))
+    except Exception as e:
+        LOGGER.error("Inline query answer failed: %s", e)
 
 
 application.add_handler(InlineQueryHandler(inlinequery, block=False))
