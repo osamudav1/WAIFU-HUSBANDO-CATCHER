@@ -40,6 +40,10 @@ _warned:           dict[int, float]     = {}   # user_id → timestamp of last w
 _sent_ids:         dict[int, list]      = {}   # rolling window of sent char IDs
 _registered_chats: set[int]            = set() # all groups ever seen
 _drop_tasks:       dict[int, asyncio.Task] = {} # chat_id → asyncio drop task
+_drop_msg:         dict[int, object]   = {}   # chat_id → sent drop Message object
+_expiry_tasks:     dict[int, asyncio.Task] = {} # chat_id → expiry countdown task
+
+_DROP_EXPIRE_SECS = 180   # 3 minutes
 
 # ── XP per correct guess (by rarity) ─────────────────────────────────────────
 _XP_MAP: dict[str, int] = {
@@ -175,6 +179,8 @@ async def _send_drop(chat_id: int, bot, forced_char: dict | None = None) -> None
 
     try:
         if media_type == "video":
+            LOGGER.info("Sending VIDEO drop for char %s (file_id=%s…)",
+                        char["id"], str(img_to_send)[:40])
             msg = await bot.send_video(
                 chat_id=chat_id,
                 video=img_to_send,
@@ -193,6 +199,7 @@ async def _send_drop(chat_id: int, bot, forced_char: dict | None = None) -> None
                         {"$set": {"img_url": new_fid}},
                     )
         else:
+            LOGGER.info("Sending PHOTO drop for char %s", char["id"])
             msg = await bot.send_photo(
                 chat_id=chat_id,
                 photo=img_to_send,
@@ -213,9 +220,64 @@ async def _send_drop(chat_id: int, bot, forced_char: dict | None = None) -> None
         LOGGER.info("Drop sent to chat %s: %s (%s) [%s]",
                     chat_id, char["name"], char.get("rarity", "?"), media_type)
 
+        # ── Save message & start 3-minute expiry countdown ────────────────────
+        _drop_msg[chat_id] = msg
+        old_exp = _expiry_tasks.pop(chat_id, None)
+        if old_exp and not old_exp.done():
+            old_exp.cancel()
+        _expiry_tasks[chat_id] = asyncio.get_event_loop().create_task(
+            _expire_drop(chat_id, char, bot)
+        )
+
     except Exception as e:
         _active_char.pop(chat_id, None)
         LOGGER.warning("Drop failed in chat %s: %s", chat_id, e)
+
+
+# ── Drop expiry coroutine ──────────────────────────────────────────────────────
+
+async def _expire_drop(chat_id: int, char: dict, bot) -> None:
+    """Wait DROP_EXPIRE_SECS then expire the drop if still unclaimed."""
+    await asyncio.sleep(_DROP_EXPIRE_SECS)
+
+    # Still the same active char?
+    if _active_char.get(chat_id) is not char:
+        return  # already claimed / replaced
+
+    _active_char.pop(chat_id, None)
+    _claimers.pop(chat_id, None)
+
+    exp_text = (
+        "⏰ <b>Character ကုန်သွားပြီ!</b>\n\n"
+        f"<b>{char['name']}</b> ({char.get('anime','?')}) — "
+        f"{char.get('rarity','?')}\n\n"
+        "3 မိနစ်အတွင်း ဘယ်သူမှ မယူလိုက်ဘူး 😢"
+    )
+
+    drop_message = _drop_msg.pop(chat_id, None)
+    try:
+        if drop_message:
+            # Edit caption of the original drop message
+            await drop_message.edit_caption(
+                caption=exp_text,
+                parse_mode=ParseMode.HTML,
+            )
+        else:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=exp_text,
+                parse_mode=ParseMode.HTML,
+            )
+    except Exception as err:
+        LOGGER.debug("Expiry message failed for chat %s: %s", chat_id, err)
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=exp_text,
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
 
 
 # ── Pre-drop announcement ─────────────────────────────────────────────────────
@@ -376,6 +438,11 @@ async def guess(update: Update, context: CallbackContext) -> None:
     # ── Correct guess ──────────────────────────────────────────────────────────
     claimers.add(user_id)
     _active_char.pop(chat_id, None)
+    _drop_msg.pop(chat_id, None)
+    # Cancel the expiry countdown since someone claimed it
+    _exp = _expiry_tasks.pop(chat_id, None)
+    if _exp and not _exp.done():
+        _exp.cancel()
 
     # Rarity-based XP
     xp_earned = _XP_MAP.get(char.get("rarity", ""), _XP_DEFAULT)

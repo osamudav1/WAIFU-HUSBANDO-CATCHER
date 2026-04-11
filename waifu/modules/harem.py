@@ -75,8 +75,14 @@ async def _build_list_view(
 
     page_chars = unique[page * _CHARS_PER_PAGE : (page + 1) * _CHARS_PER_PAGE]
 
-    # Photo = first char on the page
-    photo = next((c.get("img_url") for c in page_chars if c.get("img_url") and not c["img_url"].startswith("http")), None)
+    # Photo = first PHOTO char on the page (skip video file_ids)
+    photo = next(
+        (c.get("img_url") for c in page_chars
+         if c.get("img_url")
+         and not c["img_url"].startswith("http")
+         and c.get("media_type", "photo") != "video"),
+        None,
+    )
 
     # Group page chars by anime
     anime_groups: dict[str, list[dict]] = {}
@@ -285,6 +291,6 @@ async def noop(update: Update, context: CallbackContext) -> None:
 
 # ── Register handlers ─────────────────────────────────────────────────────────
 
-application.add_handler(CommandHandler(["harem", "collection"], harem, block=False))
+application.add_handler(CommandHandler(["harem", "collection", "waifus", "mywaifu"], harem, block=False))
 application.add_handler(CallbackQueryHandler(harem_callback, pattern=r"^harem:\d+:\d+(:\d+)?$", block=False))
 application.add_handler(CallbackQueryHandler(noop, pattern=r"^noop$", block=False))
