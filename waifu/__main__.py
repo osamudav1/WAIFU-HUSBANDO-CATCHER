@@ -28,25 +28,6 @@ async def _post_init(application) -> None:
     await create_indexes()
     LOGGER.info("DB indexes ensured.")
 
-    # ── Startup notification → Owner DM only ─────────────────────────────────
-    from waifu import OWNER_ID
-
-    startup_msg = (
-        "╔══════════════════════╗\n"
-        "║  🌸  <b>ᴡᴀɪꜰᴜ ʙᴏᴛ ᴏɴʟɪɴᴇ</b>  🌸  ║\n"
-        "╚══════════════════════╝\n\n"
-        "⚡ <b>ꜱʏꜱᴛᴇᴍ ʙᴏᴏᴛᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ</b>\n"
-        "🎴 ᴄʜᴀʀᴀᴄᴛᴇʀ ᴅʀᴏᴘꜱ ᴀʀᴇ ɴᴏᴡ ᴀᴄᴛɪᴠᴇ\n"
-        "🏆 ᴄᴏᴍᴘᴇᴛᴇ • ᴄᴏʟʟᴇᴄᴛ • ᴄᴏɴQᴜᴇʀ\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━"
-    )
-
-    try:
-        await application.bot.send_message(OWNER_ID, startup_msg, parse_mode="HTML")
-        LOGGER.info("Startup message sent to owner (%s)", OWNER_ID)
-    except Exception as e:
-        LOGGER.warning("Could not send startup message to owner: %s", e)
-
 
 def main() -> None:
     LOGGER.info("Loading %d module(s)…", len(ALL_MODULES))
