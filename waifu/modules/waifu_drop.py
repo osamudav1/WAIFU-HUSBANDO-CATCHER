@@ -224,19 +224,7 @@ async def _expire_drop(chat_id: int, char: dict, bot) -> None:
     _claimers.pop(chat_id, None)
 
     LOGGER.info("Drop expired for chat %s — char %s", chat_id, char.get("id"))
-    _name   = char.get("name", "???")
-    _anime  = char.get("anime", "???")
-    _rarity = char.get("rarity", "???")
-    exp_text = (
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "      ⏰  <b>C A R D   E X P I R E D</b>  ⏰\n"
-        "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"  ❝ <b>{_name}</b> ❞\n"
-        f"  <i>{_anime}</i>\n"
-        f"  {_rarity}\n\n"
-        "  <i>မယူလိုက်ဘဲ ကုန်သွားပြီ...</i>\n"
-        "━━━━━━━━━━━━━━━━━━━━"
-    )
+    exp_text = "      ⏰  <b>C A R D   E X P I R E D</b>  ⏰"
 
     drop_message = _drop_msg.pop(chat_id, None)
     try:
