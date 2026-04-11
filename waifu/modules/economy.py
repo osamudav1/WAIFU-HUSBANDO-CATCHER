@@ -265,8 +265,7 @@ async def market(update: Update, context: CallbackContext) -> None:
         )
         return
     caption, kb = result
-    # Append gallery browse button under the existing keyboard
-    rows = kb.inline_keyboard + [[
+    rows = list(kb.inline_keyboard) + [[
         InlineKeyboardButton("🖼 Browse Gallery", switch_inline_query_current_chat="market"),
     ]]
     await update.message.reply_text(
