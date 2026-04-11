@@ -8,8 +8,24 @@ Mode selection (automatic):
 """
 import importlib
 import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from waifu import ALL_MODULES, LOGGER
+
+
+def _run_health_server(port: int = 8080) -> None:
+    """Tiny HTTP server for Replit health checks — keeps deployment alive."""
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+        def log_message(self, *args):
+            pass   # silence access logs
+
+    server = HTTPServer(("0.0.0.0", port), _Handler)
+    server.serve_forever()
 
 
 async def _migrate_indexes() -> None:
@@ -47,31 +63,38 @@ def main() -> None:
     is_deployed = os.environ.get("REPLIT_DEPLOYMENT", "0") == "1"
 
     if is_deployed:
-        # Webhook mode — deployed Replit VM; Telegram pushes updates to us.
-        # No polling conflict with the dev environment.
-        port = int(os.environ.get("PORT", "8080"))
+        port    = int(os.environ.get("PORT", "8080"))
         domains = os.environ.get("REPLIT_DOMAINS", "")
-        domain = domains.split(",")[0].strip() if domains else ""
+        domain  = domains.split(",")[0].strip() if domains else ""
 
-        if not domain:
-            LOGGER.error("REPLIT_DOMAINS is empty; cannot start webhook. Falling back to polling.")
-            LOGGER.info("Starting bot (polling fallback)…")
-            application.run_polling(drop_pending_updates=True)
-            return
-
-        webhook_url = f"https://{domain}/{os.environ.get('BOT_TOKEN', '')}"
-        LOGGER.info("Starting bot (webhook) on port %d → %s", port, f"https://{domain}/...")
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            webhook_url=webhook_url,
-            drop_pending_updates=True,
-            allowed_updates=[
-                "message", "edited_message", "callback_query",
-                "inline_query", "chosen_inline_result",
-                "chat_member", "my_chat_member",
-            ],
-        )
+        if domain:
+            # Webhook mode — Telegram pushes updates; HTTP server built-in.
+            webhook_url = f"https://{domain}/{os.environ.get('BOT_TOKEN', '')}"
+            LOGGER.info("Starting bot (webhook) on port %d → %s", port, f"https://{domain}/...")
+            application.run_webhook(
+                listen="0.0.0.0",
+                port=port,
+                webhook_url=webhook_url,
+                drop_pending_updates=True,
+                allowed_updates=[
+                    "message", "edited_message", "callback_query",
+                    "inline_query", "chosen_inline_result",
+                    "chat_member", "my_chat_member",
+                ],
+            )
+        else:
+            # No domain → polling + health-check HTTP server (keeps deployment alive).
+            LOGGER.warning("REPLIT_DOMAINS empty — polling + health server on port %d", port)
+            t = threading.Thread(target=_run_health_server, args=(port,), daemon=True)
+            t.start()
+            application.run_polling(
+                drop_pending_updates=True,
+                allowed_updates=[
+                    "message", "edited_message", "callback_query",
+                    "inline_query", "chosen_inline_result",
+                    "chat_member", "my_chat_member",
+                ],
+            )
     else:
         LOGGER.info("Starting bot (polling)…")
         application.run_polling(
