@@ -110,35 +110,37 @@ def _rolling_window_size(total_chars: int) -> int:
 
 # ── Send drop ─────────────────────────────────────────────────────────────────
 
-async def _send_drop(chat_id: int, bot) -> None:
-    """Pick a random unseen-recently character and post it to the chat."""
-    all_chars = await collection.find({}).to_list(length=5000)
-    if not all_chars:
-        LOGGER.debug("No characters in DB — skipping drop for chat %s", chat_id)
-        return
+async def _send_drop(chat_id: int, bot, forced_char: dict | None = None) -> None:
+    """Pick a random (or forced) character and post it to the chat."""
+    if forced_char is not None:
+        char = forced_char
+    else:
+        all_chars = await collection.find({}).to_list(length=5000)
+        if not all_chars:
+            LOGGER.debug("No characters in DB — skipping drop for chat %s", chat_id)
+            return
 
-    available = [
-        c for c in all_chars
-        if c.get("claimed_count", 0) < c.get("limit", _DEFAULT_LIMIT)
-    ]
-    if not available:
-        LOGGER.info("All characters sold out in chat %s — skipping drop", chat_id)
-        return
+        available = [
+            c for c in all_chars
+            if c.get("claimed_count", 0) < c.get("limit", _DEFAULT_LIMIT)
+        ]
+        if not available:
+            LOGGER.info("All characters sold out in chat %s — skipping drop", chat_id)
+            return
 
-    window = _rolling_window_size(len(available))
-    sent   = _sent_ids.get(chat_id, [])
-    unsent = [c for c in available if c["id"] not in sent]
+        window = _rolling_window_size(len(available))
+        sent   = _sent_ids.get(chat_id, [])
+        unsent = [c for c in available if c["id"] not in sent]
 
-    if not unsent:
-        _sent_ids[chat_id] = []
-        unsent = available
-        LOGGER.debug("Sent-IDs window cleared for chat %s", chat_id)
+        if not unsent:
+            _sent_ids[chat_id] = []
+            unsent = available
+            LOGGER.debug("Sent-IDs window cleared for chat %s", chat_id)
 
-    # Weighted selection by rarity drop rate
-    weights = [_DROP_WEIGHT.get(c.get("rarity", ""), _WEIGHT_DEFAULT) for c in unsent]
-    char = random.choices(unsent, weights=weights, k=1)[0]
-    new_sent = sent + [char["id"]]
-    _sent_ids[chat_id] = new_sent[-window:]
+        weights = [_DROP_WEIGHT.get(c.get("rarity", ""), _WEIGHT_DEFAULT) for c in unsent]
+        char = random.choices(unsent, weights=weights, k=1)[0]
+        new_sent = sent + [char["id"]]
+        _sent_ids[chat_id] = new_sent[-window:]
 
     _active_char[chat_id] = char
     _claimers[chat_id]    = set()
@@ -496,110 +498,18 @@ async def fav(update: Update, context: CallbackContext) -> None:
 # ── /forcedrop ────────────────────────────────────────────────────────────────
 
 async def forcedrop(update: Update, context: CallbackContext) -> None:
-    """Owner/sudo only.
-    /forcedrop           → normal drop in current group
-    /forcedrop <user_id> → auto-give random char directly to target user
+    """Owner only.
+    /forcedrop             → random drop in current group
+    /forcedrop <char_id>   → drop that specific character in current group
     """
     caller_id = update.effective_user.id
-    if caller_id not in sudo_users and caller_id != OWNER_ID:
-        await update.message.reply_text("❌ Owner/Sudo only.")
+    if caller_id != OWNER_ID:
+        await update.message.reply_text("❌ Owner only.")
         return
 
-    # ── Targeted give: /forcedrop <user_id> ───────────────────────────────────
-    if context.args:
-        raw = context.args[0].lstrip("@")
-        if not raw.lstrip("-").isdigit():
-            await update.message.reply_text("❌ User ID ကို ဂဏန်းဖြင့် ထည့်ပါ။\nUsage: /forcedrop <user_id>")
-            return
-
-        target_uid = int(raw)
-
-        # Pick a random available character
-        all_chars = await collection.find({}).to_list(length=5000)
-        available = [
-            c for c in all_chars
-            if c.get("claimed_count", 0) < c.get("limit", _DEFAULT_LIMIT)
-        ]
-        if not available:
-            await update.message.reply_text("❌ ရနိုင်တဲ့ character မရှိဘူး (all sold out).")
-            return
-
-        weights = [_DROP_WEIGHT.get(c.get("rarity", ""), _WEIGHT_DEFAULT) for c in available]
-        char    = random.choices(available, weights=weights, k=1)[0]
-
-        # Fetch target user info from DB
-        target_doc  = await user_collection.find_one({"id": target_uid})
-        target_name = (target_doc or {}).get("first_name") or str(target_uid)
-
-        xp_earned        = _XP_MAP.get(char.get("rarity", ""), _XP_DEFAULT)
-        char_global_limit = char.get("limit", _DEFAULT_LIMIT)
-        char_prev_claimed = char.get("claimed_count", 0)
-        char_new_claimed  = char_prev_claimed + 1
-
-        # Update global claimed count
-        await collection.update_one(
-            {"id": char["id"]},
-            {"$inc": {"claimed_count": 1}},
-        )
-
-        # Add character to target user's harem
-        await user_collection.update_one(
-            {"id": target_uid},
-            {
-                "$push": {"characters": char},
-                "$inc":  {"total_guesses": 1, "xp": xp_earned},
-                "$setOnInsert": {"coins": 0, "wins": 0, "favorites": []},
-            },
-            upsert=True,
-        )
-
-        rar_emoji, rar_name = _split_rarity(char["rarity"])
-        is_sold_out = char_new_claimed >= char_global_limit
-        sold_out_line = (
-            f"\n🚫 <b>Sold Out! ({char_new_claimed}/{char_global_limit})</b>"
-            if is_sold_out else ""
-        )
-
-        updated_user = await user_collection.find_one({"id": target_uid}, {"characters": 1})
-        total_owned  = len({c["id"] for c in (updated_user or {}).get("characters", [])})
-
-        mention = f'<a href="tg://user?id={target_uid}">{escape(target_name)}</a>'
-        caption = (
-            f"⚡ <b>Force Given!</b>\n\n"
-            f"🪷 {mention} ကို character ပေးလိုက်ပြီ!\n\n"
-            f"🫧 Nᴀᴍᴇ: <b>{escape(char['name'])}</b>\n"
-            f"{rar_emoji} 𝙍𝘼𝙍𝙄𝙏𝙔: {rar_name}\n"
-            f"🏖️ Aɴɪᴍᴇ: {escape(char['anime'])} "
-            f"(<b>{char_new_claimed}/{char_global_limit}</b>)\n\n"
-            f"Added to harem! +{xp_earned} XP ✨"
-            f"{sold_out_line}"
-        )
-
-        kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton(
-                f"🔱 Waifus ({total_owned})",
-                switch_inline_query_current_chat=f"harem.{target_uid}",
-            )
-        ]])
-
-        photo_id = char.get("img_url")
-        if photo_id:
-            await update.message.reply_photo(
-                photo=photo_id,
-                caption=caption,
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        else:
-            await update.message.reply_text(caption, parse_mode=ParseMode.HTML, reply_markup=kb)
-        return
-
-    # ── Normal group drop ─────────────────────────────────────────────────────
     chat = update.effective_chat
     if chat.type == "private":
-        await update.message.reply_text(
-            "❌ Group ထဲမှာ run ပါ (သို့) /forcedrop <user_id> နဲ့ target ချပါ။"
-        )
+        await update.message.reply_text("❌ Group ထဲမှာ run ပါ။")
         return
 
     chat_id = chat.id
@@ -607,6 +517,35 @@ async def forcedrop(update: Update, context: CallbackContext) -> None:
         _registered_chats.add(chat_id)
         _start_drop_task(chat_id, context.bot)
 
+    # ── Specific character drop: /forcedrop <char_id> ─────────────────────────
+    if context.args:
+        char_id = context.args[0].strip()
+        char = await collection.find_one({"id": char_id})
+        if not char:
+            await update.message.reply_text(
+                f"❌ Character ID <code>{escape(char_id)}</code> မတွေ့ဘူး။",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        rar_emoji, rar_name = _split_rarity(char.get("rarity", ""))
+        claimed = char.get("claimed_count", 0)
+        limit   = char.get("limit", _DEFAULT_LIMIT)
+        if claimed >= limit:
+            await update.message.reply_text(
+                f"❌ <b>{escape(char['name'])}</b> ကုန်သွားပြီ! ({claimed}/{limit})",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        await update.message.reply_text(
+            f"🎴 <b>{escape(char['name'])}</b> ({rar_emoji} {rar_name}) drop ချနေပြီ…",
+            parse_mode=ParseMode.HTML,
+        )
+        await _send_drop(chat_id, context.bot, forced_char=char)
+        return
+
+    # ── Random drop ───────────────────────────────────────────────────────────
     await update.message.reply_text("🎴 Forcing a character drop...")
     await _send_drop(chat_id, context.bot)
 
