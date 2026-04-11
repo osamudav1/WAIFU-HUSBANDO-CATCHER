@@ -102,7 +102,12 @@ async def _build_card(
     if idx < total - 1:
         nav.append(InlineKeyboardButton("➡️", callback_data=f"harem:{idx+1}:{user_id}:{_vid}"))
 
-    markup   = InlineKeyboardMarkup([nav])
+    collection_btn = InlineKeyboardButton(
+        "🔱 Harem Collection",
+        switch_inline_query_current_chat=f"harem.{user_id}",
+    )
+
+    markup = InlineKeyboardMarkup([nav, [collection_btn]])
     photo_id = c.get("img_url")
 
     return caption, markup, photo_id, total
