@@ -1,43 +1,23 @@
 """
-modules/aichat.py — AI character chat (Asuka Langley Soryu) via Groq.
+modules/aichat.py — AI character chat (Asuka Langley Soryu) via Google Gemini.
 
-Features:
-  - Conversation history per user (ChatGPT/Gemini style multi-turn)
-  - $ prefix → 100% reply
-  - Bot mention → 100% reply
-  - No mention → 10% random
-  - Never discusses bot commands/functionality
+Uses direct HTTP (aiohttp) — no SDK dependency conflict.
 """
 import os
 import random
-from collections import defaultdict, deque
+import aiohttp
 
-from groq import AsyncGroq
 from telegram import Update
 from telegram.ext import CallbackContext, CommandHandler, MessageHandler, filters
 
 from waifu import application, LOGGER
 from waifu.config import Config
 
-def _get_groq_key() -> str:
-    key = os.environ.get("GROQ_API_KEY", "").strip()
-    # Fix iOS autocorrect capitalizing first letter (Gsk_ → gsk_)
-    if key.lower().startswith("gsk_"):
-        key = "gsk_" + key[4:]
-    return key
-
-_groq  = AsyncGroq(api_key=_get_groq_key())
-_MODEL = "llama-3.3-70b-versatile"
-
-# Conversation history: {user_id: deque([{role, content}, ...])}
-# Keep last 20 turns (10 user + 10 assistant) per user
-_HISTORY: dict[int, deque] = defaultdict(lambda: deque(maxlen=20))
-
-_BOT_CMD_PATTERN = __import__("re").compile(
-    r"/(ping|start|harem|market|sell|buy|delist|trade|daily|balance|"
-    r"search|upload|forcedrop|changetime|broadcast|update|delete|duel|"
-    r"evolution|leaderboard|profile|stats|sudo|help)\b",
-    __import__("re").IGNORECASE,
+_API_KEY  = os.environ.get("GOOGLE_API_KEY", "").strip()
+_GEMINI   = "gemini-2.0-flash"
+_ENDPOINT = (
+    f"https://generativelanguage.googleapis.com/v1beta/models/"
+    f"{_GEMINI}:generateContent?key={_API_KEY}"
 )
 
 _SYSTEM = """You are Asuka Langley Soryu from Neon Genesis Evangelion. Reply ONLY in casual Myanmar (Burmese) language — short, natural, like texting a friend. 1-3 sentences max.
@@ -52,39 +32,59 @@ Personality rules:
 - Do NOT start your reply by restating the question
 - Respond naturally as Asuka would, not as an AI assistant"""
 
+_BOT_CMD_PATTERN = __import__("re").compile(
+    r"/(ping|start|harem|market|sell|buy|delist|trade|daily|balance|"
+    r"search|upload|forcedrop|changetime|broadcast|update|delete|duel|"
+    r"evolution|leaderboard|profile|stats|sudo|help)\b",
+    __import__("re").IGNORECASE,
+)
 
-async def _ask_groq(uid: int, user_msg: str, is_owner: bool) -> str:
-    role_hint = (
-        "This person is the owner. Be warm, sweet, and caring toward them."
+# Per-user conversation history {uid: [{"role": ..., "parts": [...]}, ...]}
+_HISTORY: dict[int, list] = {}
+
+
+async def _ask_gemini(uid: int, user_msg: str, is_owner: bool) -> str:
+    role_ctx = (
+        "This person is the owner — be warm, sweet, and caring."
         if is_owner else
-        "This person is NOT the owner. Use Asuka's sharp, tsundere, confident personality."
+        "This person is NOT the owner — use Asuka's sharp, tsundere, confident personality."
     )
 
-    # Build message list: system → role_hint → history → new user msg
-    history   = list(_HISTORY[uid])
-    messages  = [
-        {"role": "system", "content": _SYSTEM},
-        {"role": "system", "content": role_hint},
+    history = _HISTORY.get(uid, [])
+
+    contents = [
+        {"role": "user",  "parts": [{"text": role_ctx}]},
+        {"role": "model", "parts": [{"text": "နားလည်တယ် နော်~"}]},
         *history,
-        {"role": "user",   "content": user_msg},
+        {"role": "user",  "parts": [{"text": user_msg}]},
     ]
 
-    try:
-        resp = await _groq.chat.completions.create(
-            model=_MODEL,
-            messages=messages,
-            max_tokens=500,
-            temperature=0.9,
-        )
-        reply = resp.choices[0].message.content.strip()
+    payload = {
+        "system_instruction": {"parts": [{"text": _SYSTEM}]},
+        "contents": contents,
+        "generationConfig": {
+            "maxOutputTokens": 300,
+            "temperature": 0.9,
+        },
+    }
 
-        # Save to history
-        _HISTORY[uid].append({"role": "user",      "content": user_msg})
-        _HISTORY[uid].append({"role": "assistant",  "content": reply})
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(_ENDPOINT, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                data  = await resp.json()
+                reply = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+        # Save to history (keep last 20 messages)
+        if uid not in _HISTORY:
+            _HISTORY[uid] = []
+        _HISTORY[uid].append({"role": "user",  "parts": [{"text": user_msg}]})
+        _HISTORY[uid].append({"role": "model", "parts": [{"text": reply}]})
+        if len(_HISTORY[uid]) > 20:
+            _HISTORY[uid] = _HISTORY[uid][-20:]
 
         return reply
     except Exception as e:
-        LOGGER.error("Groq error: %s", e)
+        LOGGER.error("Gemini error: %s", e)
         return "ဘာပြောမှန်းမသိဘူး နော်… နောက်မှ ပြောပါ ရှင့်။"
 
 
@@ -95,25 +95,20 @@ async def ai_chat(update: Update, context: CallbackContext) -> None:
 
     if not text:
         return
-
-    # Skip bot command discussions
     if _BOT_CMD_PATTERN.search(text):
         return
 
     dollar_trigger = text.startswith("$")
-
-    bot_username = Config.BOT_USERNAME.lstrip("@").lower()
-    mentioned    = bot_username in text.lower() or (
+    bot_username   = Config.BOT_USERNAME.lstrip("@").lower()
+    mentioned      = bot_username in text.lower() or (
         msg.reply_to_message and msg.reply_to_message.from_user and
         msg.reply_to_message.from_user.username and
         msg.reply_to_message.from_user.username.lower() == bot_username
     )
 
-    # Decide whether to reply
     if not dollar_trigger and not mentioned and random.random() > 0.10:
         return
 
-    # Clean up trigger prefix / mention
     if dollar_trigger:
         text = text[1:].strip()
     text = text.replace(f"@{Config.BOT_USERNAME.lstrip('@')}", "").strip()
@@ -127,21 +122,20 @@ async def ai_chat(update: Update, context: CallbackContext) -> None:
     except Exception:
         pass
 
-    reply = await _ask_groq(uid, text, is_owner)
+    reply = await _ask_gemini(uid, text, is_owner)
 
     try:
         await msg.reply_text(reply)
     except Exception as e:
-        LOGGER.error("AI chat reply error: %s", e)
+        LOGGER.error("AI reply error: %s", e)
 
 
 async def clear_history(update: Update, context: CallbackContext) -> None:
     uid = update.effective_user.id
-    _HISTORY[uid].clear()
+    _HISTORY.pop(uid, None)
     await update.message.reply_text("🧹 စကားပြော history ရှင်းလိုက်ပြီ နော်~")
 
 
-# Handlers
 application.add_handler(CommandHandler("clearchat", clear_history, block=False))
 application.add_handler(
     MessageHandler(
