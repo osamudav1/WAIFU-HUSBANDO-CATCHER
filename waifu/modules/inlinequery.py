@@ -2,8 +2,9 @@ import re
 import time
 from html import escape
 from pymongo import ASCENDING
-from telegram import InlineQueryResultCachedPhoto, InlineQueryResultArticle, InputTextMessageContent, Update
-from telegram.ext import CallbackContext, InlineQueryHandler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultCachedPhoto, InlineQueryResultArticle, InputTextMessageContent, Update
+from telegram.constants import ParseMode
+from telegram.ext import CallbackContext, CommandHandler, InlineQueryHandler
 from waifu import application, collection, db, user_collection, market_collection, LOGGER
 
 _PAGE = 50
@@ -257,4 +258,18 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
         LOGGER.error("Inline query answer failed: %s", e)
 
 
+async def search_cmd(update: Update, context: CallbackContext) -> None:
+    await update.message.reply_text(
+        "⬜ <b>TO SEARCH CHARACTER CLICK ON BUTTON BELOW</b>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                "🔨 SEARCH CHARACTERS",
+                switch_inline_query_current_chat="",
+            ),
+        ]]),
+    )
+
+
+application.add_handler(CommandHandler("search", search_cmd, block=False))
 application.add_handler(InlineQueryHandler(inlinequery, block=False))
