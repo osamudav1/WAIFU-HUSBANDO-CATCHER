@@ -71,8 +71,23 @@ async def _ask_gemini(uid: int, user_msg: str, is_owner: bool) -> str:
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(_ENDPOINT, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                data  = await resp.json()
-                reply = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                data = await resp.json()
+
+        LOGGER.debug("Gemini raw response: %s", data)
+
+        # Handle blocked / empty candidates
+        candidates = data.get("candidates", [])
+        if not candidates:
+            reason = data.get("promptFeedback", {}).get("blockReason", "NO_CANDIDATES")
+            LOGGER.warning("Gemini no candidates: %s | full: %s", reason, data)
+            return "ဘာပြောမှန်းမသိဘူး နော်… နောက်မှ ပြောပါ ရှင့်။"
+
+        parts = candidates[0].get("content", {}).get("parts", [])
+        if not parts:
+            LOGGER.warning("Gemini empty parts: %s", data)
+            return "ဘာပြောမှန်းမသိဘူး နော်… နောက်မှ ပြောပါ ရှင့်။"
+
+        reply = parts[0].get("text", "").strip()
 
         # Save to history (keep last 20 messages)
         if uid not in _HISTORY:
