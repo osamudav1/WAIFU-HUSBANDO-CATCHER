@@ -19,7 +19,14 @@ from telegram.ext import CallbackContext, CommandHandler, MessageHandler, filter
 from waifu import application, LOGGER
 from waifu.config import Config
 
-_groq  = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY", ""))
+def _get_groq_key() -> str:
+    key = os.environ.get("GROQ_API_KEY", "").strip()
+    # Fix iOS autocorrect capitalizing first letter (Gsk_ → gsk_)
+    if key.lower().startswith("gsk_"):
+        key = "gsk_" + key[4:]
+    return key
+
+_groq  = AsyncGroq(api_key=_get_groq_key())
 _MODEL = "llama3-8b-8192"
 
 # Conversation history: {user_id: deque([{role, content}, ...])}
