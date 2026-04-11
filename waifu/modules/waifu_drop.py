@@ -149,76 +149,51 @@ async def _send_drop(chat_id: int, bot, forced_char: dict | None = None) -> None
     _active_char[chat_id] = char
     _claimers[chat_id]    = set()
 
-    # ── Resolve img_url: recover broken api.telegram.org URLs on-the-fly ─────────
+    # ── Resolve img_url (photo only — videos are only used in /check) ────────────
     import io as _io
     from telegram import InputFile as _InputFile
     img_to_send = char["img_url"]
-    _char_mtype = char.get("media_type", "photo")
     if isinstance(img_to_send, str) and "api.telegram.org" in img_to_send:
-        _fname = "video.mp4" if _char_mtype == "video" else "photo.jpg"
         try:
             import httpx as _httpx
             async with _httpx.AsyncClient(timeout=20) as _http:
                 _r = await _http.get(img_to_send)
                 _r.raise_for_status()
-                img_to_send = _InputFile(_io.BytesIO(_r.content), filename=_fname)
+                img_to_send = _InputFile(_io.BytesIO(_r.content), filename="photo.jpg")
             LOGGER.info("CDN URL recovered for char %s via download", char["id"])
         except Exception as _dl_err:
             LOGGER.warning("CDN URL download failed for %s: %s", char["id"], _dl_err)
-            return                          # skip this drop cycle
+            return
 
-    # InputFile (bytes) needs a longer write timeout for upload
     _is_file_upload = not isinstance(img_to_send, str)
     _write_timeout  = 60 if _is_file_upload else 10
 
-    media_type   = char.get("media_type", "photo")
     drop_caption = (
         "✨ <b>A new character appeared!</b>\n\n"
         "<i>Use /guess [name] to add them to your harem!</i>"
     )
 
     try:
-        if media_type == "video":
-            LOGGER.info("Sending VIDEO drop for char %s (file_id=%s…)",
-                        char["id"], str(img_to_send)[:40])
-            msg = await bot.send_video(
-                chat_id=chat_id,
-                video=img_to_send,
-                caption=drop_caption,
-                parse_mode=ParseMode.HTML,
-                write_timeout=_write_timeout,
-                read_timeout=60,
-            )
-            # Save permanent file_id
-            if msg.video:
-                new_fid = msg.video.file_id
-                if new_fid != char.get("img_url"):
-                    char["img_url"] = new_fid
-                    await collection.update_one(
-                        {"id": char["id"]},
-                        {"$set": {"img_url": new_fid}},
-                    )
-        else:
-            LOGGER.info("Sending PHOTO drop for char %s", char["id"])
-            msg = await bot.send_photo(
-                chat_id=chat_id,
-                photo=img_to_send,
-                caption=drop_caption,
-                parse_mode=ParseMode.HTML,
-                write_timeout=_write_timeout,
-                read_timeout=30,
-            )
-            if msg.photo:
-                new_fid = msg.photo[-1].file_id
-                if new_fid != char.get("img_url"):
-                    char["img_url"] = new_fid
-                    await collection.update_one(
-                        {"id": char["id"]},
-                        {"$set": {"img_url": new_fid}},
-                    )
+        LOGGER.info("Sending PHOTO drop for char %s", char["id"])
+        msg = await bot.send_photo(
+            chat_id=chat_id,
+            photo=img_to_send,
+            caption=drop_caption,
+            parse_mode=ParseMode.HTML,
+            write_timeout=_write_timeout,
+            read_timeout=30,
+        )
+        if msg.photo:
+            new_fid = msg.photo[-1].file_id
+            if new_fid != char.get("img_url"):
+                char["img_url"] = new_fid
+                await collection.update_one(
+                    {"id": char["id"]},
+                    {"$set": {"img_url": new_fid}},
+                )
 
-        LOGGER.info("Drop sent to chat %s: %s (%s) [%s]",
-                    chat_id, char["name"], char.get("rarity", "?"), media_type)
+        LOGGER.info("Drop sent to chat %s: %s (%s)",
+                    chat_id, char["name"], char.get("rarity", "?"))
 
         # ── Save message & start 5-minute expiry countdown ────────────────────
         _drop_msg[chat_id] = msg
@@ -249,11 +224,18 @@ async def _expire_drop(chat_id: int, char: dict, bot) -> None:
     _claimers.pop(chat_id, None)
 
     LOGGER.info("Drop expired for chat %s — char %s", chat_id, char.get("id"))
+    _name   = char.get("name", "???")
+    _anime  = char.get("anime", "???")
+    _rarity = char.get("rarity", "???")
     exp_text = (
-        "⏰ <b>Character ကုန်သွားပြီ!</b>\n\n"
-        f"<b>{char['name']}</b> ({char.get('anime','?')}) — "
-        f"{char.get('rarity','?')}\n\n"
-        "5 မိနစ်အတွင်း ဘယ်သူမှ မယူလိုက်ဘူး 😢"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "      ⏰  <b>C A R D   E X P I R E D</b>  ⏰\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"  ❝ <b>{_name}</b> ❞\n"
+        f"  <i>{_anime}</i>\n"
+        f"  {_rarity}\n\n"
+        "  <i>မယူလိုက်ဘဲ ကုန်သွားပြီ...</i>\n"
+        "━━━━━━━━━━━━━━━━━━━━"
     )
 
     drop_message = _drop_msg.pop(chat_id, None)

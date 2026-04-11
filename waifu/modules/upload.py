@@ -615,6 +615,108 @@ async def update_char(upd: Update, context: CallbackContext) -> None:
     )
 
 
+# ── /charactervdadd — attach a video clip (AMV) to an existing character ───────
+
+async def charactervdadd(update: Update, context: CallbackContext) -> None:
+    """
+    Owner only. Reply to a video message with /charactervdadd <char_id>
+    to attach that video as the AMV clip for the character (shown in /check).
+    """
+    uid = update.effective_user.id
+    if uid != OWNER_ID and not _is_sudo(uid):
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: video message ကို reply ဆွဲပြီး\n"
+            "<code>/charactervdadd &lt;char_id&gt;</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    char_id = context.args[0].strip()
+
+    # Must be replying to a video / animation / document-video
+    reply = update.message.reply_to_message
+    if not reply:
+        await update.message.reply_text("❌ Video message ကို reply ဆွဲပြီး ရိုက်ပေး။")
+        return
+
+    file_id = None
+    if reply.video:
+        file_id = reply.video.file_id
+    elif reply.animation:
+        file_id = reply.animation.file_id
+    elif reply.document and reply.document.mime_type and reply.document.mime_type.startswith("video/"):
+        file_id = reply.document.file_id
+
+    if not file_id:
+        await update.message.reply_text("❌ Reply message မှာ video မတွေ့ဘူး။")
+        return
+
+    char = await collection.find_one({"id": char_id})
+    if not char:
+        await update.message.reply_text(
+            f"❌ Character <code>{escape(char_id)}</code> မတွေ့ဘူး။",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    await collection.update_one(
+        {"id": char_id},
+        {"$set": {"video_url": file_id}},
+    )
+
+    await update.message.reply_text(
+        f"✅ <b>{escape(char.get('name','?'))}</b> (<code>{char_id}</code>) ကို\n"
+        f"🎬 AMV video တပ်ပြီးပြီ! /check {char_id} နဲ့ စစ်ကြည့်ပေး။",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+# ── /deletevd — remove the video clip from a character ───────────────────────
+
+async def deletevd(update: Update, context: CallbackContext) -> None:
+    """Owner only. /deletevd <char_id> removes the video_url field."""
+    uid = update.effective_user.id
+    if uid != OWNER_ID and not _is_sudo(uid):
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: <code>/deletevd &lt;char_id&gt;</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    char_id = context.args[0].strip()
+    char = await collection.find_one({"id": char_id})
+    if not char:
+        await update.message.reply_text(
+            f"❌ Character <code>{escape(char_id)}</code> မတွေ့ဘူး။",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    if not char.get("video_url"):
+        await update.message.reply_text(
+            f"⚠️ <b>{escape(char.get('name','?'))}</b> မှာ video မရှိဘူး။",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    await collection.update_one(
+        {"id": char_id},
+        {"$unset": {"video_url": ""}},
+    )
+
+    await update.message.reply_text(
+        f"🗑 <b>{escape(char.get('name','?'))}</b> (<code>{char_id}</code>) ရဲ့\n"
+        f"AMV video ဖျက်ပြီးပြီ။",
+        parse_mode=ParseMode.HTML,
+    )
+
+
 # ── Register handlers ─────────────────────────────────────────────────────────
 
 _PHOTO_FILTER  = filters.PHOTO | filters.Document.IMAGE
@@ -642,7 +744,9 @@ _upload_conv = ConversationHandler(
 )
 
 application.add_handler(_upload_conv)
-application.add_handler(CommandHandler("uploadchar",  uploadchar,   block=False))
-application.add_handler(CommandHandler("delete",      delete,       block=False))
-application.add_handler(CommandHandler("update",      update_char,  block=False))
-application.add_handler(CommandHandler("migrateimgs", migrate_imgs, block=False))
+application.add_handler(CommandHandler("uploadchar",      uploadchar,      block=False))
+application.add_handler(CommandHandler("delete",          delete,          block=False))
+application.add_handler(CommandHandler("update",          update_char,     block=False))
+application.add_handler(CommandHandler("migrateimgs",     migrate_imgs,    block=False))
+application.add_handler(CommandHandler("charactervdadd",  charactervdadd,  block=False))
+application.add_handler(CommandHandler("deletevd",        deletevd,        block=False))
