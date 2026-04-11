@@ -65,10 +65,22 @@ def main() -> None:
             port=port,
             webhook_url=webhook_url,
             drop_pending_updates=True,
+            allowed_updates=[
+                "message", "edited_message", "callback_query",
+                "inline_query", "chosen_inline_result",
+                "chat_member", "my_chat_member",
+            ],
         )
     else:
         LOGGER.info("Starting bot (polling)…")
-        application.run_polling(drop_pending_updates=True)
+        application.run_polling(
+            drop_pending_updates=True,
+            allowed_updates=[
+                "message", "edited_message", "callback_query",
+                "inline_query", "chosen_inline_result",
+                "chat_member", "my_chat_member",
+            ],
+        )
 
 
 if __name__ == "__main__":
