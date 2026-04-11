@@ -4,7 +4,7 @@ from html import escape
 from pymongo import ASCENDING
 from telegram import InlineQueryResultCachedPhoto, InlineQueryResultArticle, InputTextMessageContent, Update
 from telegram.ext import CallbackContext, InlineQueryHandler
-from waifu import application, collection, db, user_collection, LOGGER
+from waifu import application, collection, db, user_collection, market_collection, LOGGER
 
 _PAGE = 50
 
@@ -45,8 +45,65 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
     user: dict | None = None
     chars: list[dict] = []
 
-    _COLL_PREFIXES = ("collection.", "harem.")
-    _is_user_query = any(raw.startswith(p) for p in _COLL_PREFIXES)
+    _COLL_PREFIXES  = ("collection.", "harem.")
+    _is_market_query = raw.startswith("market")
+    _is_user_query   = any(raw.startswith(p) for p in _COLL_PREFIXES)
+
+    # ── Market gallery ────────────────────────────────────────────────────────
+    if _is_market_query:
+        search = raw[len("market"):].strip()
+        query  = {}
+        if search:
+            pat   = re.escape(search)
+            query = {"$or": [
+                {"char.name":  {"$regex": pat, "$options": "i"}},
+                {"char.anime": {"$regex": pat, "$options": "i"}},
+            ]}
+        all_listings = await market_collection.find(query).sort("price", 1).to_list(5000)
+
+        page_listings = all_listings[offset: offset + _PAGE]
+        next_offset   = str(offset + len(page_listings)) if len(page_listings) == _PAGE else ""
+
+        results = []
+        for lst in page_listings:
+            char   = lst.get("char", {})
+            img    = char.get("img_url", "")
+            name   = escape(char.get("name", "?"))
+            anime  = escape(char.get("anime", "?"))
+            rarity = char.get("rarity", "?")
+            price  = lst.get("price", 0)
+            seller = escape(lst.get("seller_name", "?"))
+            lid    = str(lst["_id"])
+
+            cap = (
+                f"🏪 <b>Market</b>\n\n"
+                f"🌸 <b>{name}</b>\n"
+                f"📺 {anime}\n"
+                f"💎 {rarity}\n\n"
+                f"💰 Price: <b>{price:,} 🪙</b>\n"
+                f"👤 Seller: <b>{seller}</b>\n"
+                f"🆔 <code>{lid}</code>\n\n"
+                f"<i>/buy {lid}</i>"
+            )
+
+            if _is_tg_file_id(img):
+                results.append(InlineQueryResultCachedPhoto(
+                    id=f"mkt_{lid}_{time.time_ns()}",
+                    photo_file_id=img,
+                    caption=cap,
+                    parse_mode="HTML",
+                ))
+
+        if not results:
+            results = [InlineQueryResultArticle(
+                id="mkt_empty",
+                title="🏪 Market ဗလာ",
+                description="ဈေးကွက်မှာ listing မရှိသေးဘူး",
+                input_message_content=InputTextMessageContent("🏪 Market is empty."),
+            )]
+
+        await update.inline_query.answer(results, next_offset=next_offset, cache_time=5)
+        return
 
     if _is_user_query:
         # ── User's personal harem ────────────────────────────────────────────

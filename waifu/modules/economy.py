@@ -257,10 +257,21 @@ async def sell(update: Update, context: CallbackContext) -> None:
 async def market(update: Update, context: CallbackContext) -> None:
     result = await _build_list(page=0)
     if not result:
-        await update.message.reply_text("🏪 The market is empty right now.")
+        await update.message.reply_text(
+            "🏪 The market is empty right now.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🖼 Browse Gallery", switch_inline_query_current_chat="market"),
+            ]]),
+        )
         return
     caption, kb = result
-    await update.message.reply_text(caption, parse_mode=ParseMode.HTML, reply_markup=kb)
+    # Append gallery browse button under the existing keyboard
+    rows = kb.inline_keyboard + [[
+        InlineKeyboardButton("🖼 Browse Gallery", switch_inline_query_current_chat="market"),
+    ]]
+    await update.message.reply_text(
+        caption, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(rows)
+    )
 
 
 # ── Market callbacks ──────────────────────────────────────────────────────────
