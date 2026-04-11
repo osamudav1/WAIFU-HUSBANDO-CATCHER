@@ -496,15 +496,110 @@ async def fav(update: Update, context: CallbackContext) -> None:
 # ── /forcedrop ────────────────────────────────────────────────────────────────
 
 async def forcedrop(update: Update, context: CallbackContext) -> None:
-    """Owner/sudo only — instantly trigger a drop in the current group."""
-    user_id = update.effective_user.id
-    if user_id not in sudo_users and user_id != OWNER_ID:
+    """Owner/sudo only.
+    /forcedrop           → normal drop in current group
+    /forcedrop <user_id> → auto-give random char directly to target user
+    """
+    caller_id = update.effective_user.id
+    if caller_id not in sudo_users and caller_id != OWNER_ID:
         await update.message.reply_text("❌ Owner/Sudo only.")
         return
 
+    # ── Targeted give: /forcedrop <user_id> ───────────────────────────────────
+    if context.args:
+        raw = context.args[0].lstrip("@")
+        if not raw.lstrip("-").isdigit():
+            await update.message.reply_text("❌ User ID ကို ဂဏန်းဖြင့် ထည့်ပါ။\nUsage: /forcedrop <user_id>")
+            return
+
+        target_uid = int(raw)
+
+        # Pick a random available character
+        all_chars = await collection.find({}).to_list(length=5000)
+        available = [
+            c for c in all_chars
+            if c.get("claimed_count", 0) < c.get("limit", _DEFAULT_LIMIT)
+        ]
+        if not available:
+            await update.message.reply_text("❌ ရနိုင်တဲ့ character မရှိဘူး (all sold out).")
+            return
+
+        weights = [_DROP_WEIGHT.get(c.get("rarity", ""), _WEIGHT_DEFAULT) for c in available]
+        char    = random.choices(available, weights=weights, k=1)[0]
+
+        # Fetch target user info from DB
+        target_doc  = await user_collection.find_one({"id": target_uid})
+        target_name = (target_doc or {}).get("first_name") or str(target_uid)
+
+        xp_earned        = _XP_MAP.get(char.get("rarity", ""), _XP_DEFAULT)
+        char_global_limit = char.get("limit", _DEFAULT_LIMIT)
+        char_prev_claimed = char.get("claimed_count", 0)
+        char_new_claimed  = char_prev_claimed + 1
+
+        # Update global claimed count
+        await collection.update_one(
+            {"id": char["id"]},
+            {"$inc": {"claimed_count": 1}},
+        )
+
+        # Add character to target user's harem
+        await user_collection.update_one(
+            {"id": target_uid},
+            {
+                "$push": {"characters": char},
+                "$inc":  {"total_guesses": 1, "xp": xp_earned},
+                "$setOnInsert": {"coins": 0, "wins": 0, "favorites": []},
+            },
+            upsert=True,
+        )
+
+        rar_emoji, rar_name = _split_rarity(char["rarity"])
+        is_sold_out = char_new_claimed >= char_global_limit
+        sold_out_line = (
+            f"\n🚫 <b>Sold Out! ({char_new_claimed}/{char_global_limit})</b>"
+            if is_sold_out else ""
+        )
+
+        updated_user = await user_collection.find_one({"id": target_uid}, {"characters": 1})
+        total_owned  = len({c["id"] for c in (updated_user or {}).get("characters", [])})
+
+        mention = f'<a href="tg://user?id={target_uid}">{escape(target_name)}</a>'
+        caption = (
+            f"⚡ <b>Force Given!</b>\n\n"
+            f"🪷 {mention} ကို character ပေးလိုက်ပြီ!\n\n"
+            f"🫧 Nᴀᴍᴇ: <b>{escape(char['name'])}</b>\n"
+            f"{rar_emoji} 𝙍𝘼𝙍𝙄𝙏𝙔: {rar_name}\n"
+            f"🏖️ Aɴɪᴍᴇ: {escape(char['anime'])} "
+            f"(<b>{char_new_claimed}/{char_global_limit}</b>)\n\n"
+            f"Added to harem! +{xp_earned} XP ✨"
+            f"{sold_out_line}"
+        )
+
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                f"🔱 Waifus ({total_owned})",
+                switch_inline_query_current_chat=f"harem.{target_uid}",
+            )
+        ]])
+
+        photo_id = char.get("img_url")
+        if photo_id:
+            await update.message.reply_photo(
+                photo=photo_id,
+                caption=caption,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+            )
+        else:
+            await update.message.reply_text(caption, parse_mode=ParseMode.HTML, reply_markup=kb)
+        return
+
+    # ── Normal group drop ─────────────────────────────────────────────────────
     chat = update.effective_chat
     if chat.type == "private":
-        await update.message.reply_text("❌ Run this in a group to trigger a drop there.")
+        await update.message.reply_text(
+            "❌ Group ထဲမှာ run ပါ (သို့) /forcedrop <user_id> နဲ့ target ချပါ။"
+        )
         return
 
     chat_id = chat.id
