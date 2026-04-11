@@ -115,6 +115,7 @@ async def changetime(update: Update, context: CallbackContext) -> None:
             )
             all_groups = list(g1 | g2 | g3)
 
+            from waifu.modules.waifu_drop import restart_drop_task
             for gid in all_groups:
                 await user_totals_collection.find_one_and_update(
                     {"chat_id": gid},
@@ -122,11 +123,12 @@ async def changetime(update: Update, context: CallbackContext) -> None:
                     upsert=True,
                     return_document=ReturnDocument.AFTER,
                 )
+                restart_drop_task(gid, context.bot)
 
             await update.message.reply_text(
                 f"✅ Group <b>{len(all_groups)}</b> ခုအကုန်လုံး\n"
                 f"Drop interval → <b>{n}</b> မိနစ်တိုင်း drop\n"
-                f"<i>(နောက် cycle မှ စတင် apply ဖြစ်မည်)</i>",
+                f"<i>✨ ချက်ချင်း apply ဖြစ်ပြီ (loop restart ပြီး)</i>",
                 parse_mode=ParseMode.HTML,
             )
             return
@@ -153,6 +155,8 @@ async def changetime(update: Update, context: CallbackContext) -> None:
             upsert=True,
             return_document=ReturnDocument.AFTER,
         )
+        from waifu.modules.waifu_drop import restart_drop_task
+        restart_drop_task(target_cid, context.bot)
         try:
             chat_obj = await context.bot.get_chat(target_cid)
             gname = chat_obj.title or str(target_cid)
@@ -162,7 +166,7 @@ async def changetime(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text(
             f"✅ <b>{gname}</b>\n"
             f"Drop interval: <b>{old}</b> → <b>{n}</b> မိနစ်တိုင်း drop\n"
-            f"<i>(နောက် cycle မှ စတင် apply ဖြစ်မည်)</i>",
+            f"<i>✨ ချက်ချင်း apply ဖြစ်ပြီ</i>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -197,9 +201,11 @@ async def changetime(update: Update, context: CallbackContext) -> None:
         upsert=True,
         return_document=ReturnDocument.AFTER,
     )
+    from waifu.modules.waifu_drop import restart_drop_task
+    restart_drop_task(chat.id, context.bot)
     await update.message.reply_text(
         f"✅ Drop interval: <b>{old}</b> → <b>{n}</b> မိနစ်တိုင်း drop\n"
-        f"<i>(နောက် cycle မှ စတင် apply ဖြစ်မည်)</i>",
+        f"<i>✨ ချက်ချင်း apply ဖြစ်ပြီ</i>",
         parse_mode=ParseMode.HTML,
     )
 

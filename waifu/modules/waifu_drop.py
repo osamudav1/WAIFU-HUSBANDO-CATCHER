@@ -241,13 +241,28 @@ async def _drop_loop(chat_id: int, bot) -> None:
 
 
 def _start_drop_task(chat_id: int, bot) -> None:
-    """Start (or restart) the drop timer for a group."""
+    """Start the drop timer for a group (no-op if already running)."""
     existing = _drop_tasks.get(chat_id)
     if existing and not existing.done():
         return   # already running — don't restart mid-cycle
     task = asyncio.create_task(_drop_loop(chat_id, bot))
     _drop_tasks[chat_id] = task
     LOGGER.info("Drop timer started for chat %s", chat_id)
+
+
+def restart_drop_task(chat_id: int, bot) -> None:
+    """Cancel the current drop loop for chat_id and start a fresh one.
+
+    Call this after changing the drop interval so the new value takes
+    effect immediately instead of waiting for the old sleep to finish.
+    """
+    existing = _drop_tasks.get(chat_id)
+    if existing and not existing.done():
+        existing.cancel()
+    _registered_chats.add(chat_id)
+    task = asyncio.create_task(_drop_loop(chat_id, bot))
+    _drop_tasks[chat_id] = task
+    LOGGER.info("Drop timer restarted for chat %s (interval change)", chat_id)
 
 
 # ── Message handler (anti-spam + timer registration) ─────────────────────────
