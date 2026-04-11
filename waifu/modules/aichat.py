@@ -27,7 +27,7 @@ def _get_groq_key() -> str:
     return key
 
 _groq  = AsyncGroq(api_key=_get_groq_key())
-_MODEL = "llama3-8b-8192"
+_MODEL = "llama-3.3-70b-versatile"
 
 # Conversation history: {user_id: deque([{role, content}, ...])}
 # Keep last 20 turns (10 user + 10 assistant) per user
