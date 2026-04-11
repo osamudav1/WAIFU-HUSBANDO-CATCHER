@@ -71,6 +71,8 @@ async def ai_chat(update: Update, context: CallbackContext) -> None:
     if _BOT_CMD_PATTERN.search(text):
         return
 
+    dollar_trigger = text.startswith("$")
+
     bot_username = Config.BOT_USERNAME.lstrip("@").lower()
     mentioned    = bot_username in text.lower() or (
         msg.reply_to_message and msg.reply_to_message.from_user and
@@ -78,8 +80,13 @@ async def ai_chat(update: Update, context: CallbackContext) -> None:
         msg.reply_to_message.from_user.username.lower() == bot_username
     )
 
-    if not mentioned and random.random() > 0.10:
+    # $ prefix → 100% reply; mention → 100%; else 10% random
+    if not dollar_trigger and not mentioned and random.random() > 0.10:
         return
+
+    # Strip leading $ for cleaner prompt
+    if dollar_trigger:
+        text = text[1:].strip()
 
     is_owner = (uid == Config.OWNER_ID)
 
