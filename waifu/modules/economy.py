@@ -255,22 +255,52 @@ async def sell(update: Update, context: CallbackContext) -> None:
 # ── /market ───────────────────────────────────────────────────────────────────
 
 async def market(update: Update, context: CallbackContext) -> None:
-    result = await _build_list(page=0)
-    if not result:
+    total   = await market_collection.count_documents({})
+    mp_btn  = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🏪 Market Place", switch_inline_query_current_chat="market"),
+    ]])
+
+    if total == 0:
         await update.message.reply_text(
-            "🏪 The market is empty right now.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🖼 Browse Gallery", switch_inline_query_current_chat="market"),
-            ]]),
+            "🏪 <b>Market</b>\n\n<i>ဈေးကွက်မှာ listing မရှိသေးဘူး</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=mp_btn,
         )
         return
-    caption, kb = result
-    rows = list(kb.inline_keyboard) + [[
-        InlineKeyboardButton("🖼 Browse Gallery", switch_inline_query_current_chat="market"),
-    ]]
-    await update.message.reply_text(
-        caption, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(rows)
+
+    # Get the most recently listed item
+    latest = await market_collection.find_one({}, sort=[("listed_at", -1)])
+    char   = latest.get("char", {})
+    img    = char.get("img_url", "")
+    name   = escape(char.get("name",  "Unknown"))
+    anime  = escape(char.get("anime", "Unknown"))
+    rarity = char.get("rarity", "?")
+    price  = latest.get("price", 0)
+    seller = escape(latest.get("seller_name", "?"))
+    lid    = str(latest["_id"])
+
+    cap = (
+        f"🏪 <b>Market</b>  [{total} listing{'s' if total != 1 else ''}]\n\n"
+        f"🌸 <b>{name}</b>\n"
+        f"📺 {anime}\n"
+        f"💎 {rarity}\n\n"
+        f"💰 Price: <b>{price:,} 🪙</b>\n"
+        f"👤 Seller: <b>{seller}</b>\n\n"
+        f"<i>Market Place ကိုနှိပ်ပြီး ကဒ်အားလုံးကြည့်ဝယ်နိုင်</i>"
     )
+
+    # Show latest listing photo if available, else text
+    if img and not img.startswith("http"):
+        await update.message.reply_photo(
+            photo=img,
+            caption=cap,
+            parse_mode=ParseMode.HTML,
+            reply_markup=mp_btn,
+        )
+    else:
+        await update.message.reply_text(
+            cap, parse_mode=ParseMode.HTML, reply_markup=mp_btn
+        )
 
 
 # ── Market callbacks ──────────────────────────────────────────────────────────
