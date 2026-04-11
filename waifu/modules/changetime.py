@@ -1,7 +1,11 @@
 """
 modules/changetime.py — /changetime <minutes> per-group drop interval.
 
-Admin-only. Sets how many minutes between each character drop.
+• In a group  : admin / owner / sudo → /changetime <minutes>
+• In owner DM : /changetime              → list all groups + intervals
+              : /changetime <group_id> <minutes> → set specific group
+              : /resettime <group_id>   → reset specific group
+              : /resettime              → list all
 """
 from pymongo import ReturnDocument
 from telegram import Update
@@ -30,16 +34,107 @@ async def get_interval(chat_id: int) -> int:
     return Config.DROP_INTERVAL_MIN
 
 
-async def changetime(update: Update, context: CallbackContext) -> None:
-    if update.effective_chat.type == "private":
-        await update.message.reply_text("❌ Group ထဲမှာသာ သုံးပါ။")
+# ── helper: show all groups list ─────────────────────────────────────────────
+
+async def _list_all_groups(bot, reply_fn) -> None:
+    docs = await user_totals_collection.find(
+        {"chat_id": {"$lt": 0}}
+    ).to_list(length=500)
+
+    if not docs:
+        await reply_fn("📋 DB မှာ group settings မရှိသေးပါ။")
         return
+
+    lines = ["📋 <b>Group Drop Intervals</b>\n"]
+    for d in docs:
+        cid = d["chat_id"]
+        mins = d.get("drop_interval_minutes", Config.DROP_INTERVAL_MIN)
+        try:
+            chat = await bot.get_chat(cid)
+            name = chat.title or str(cid)
+        except Exception:
+            name = str(cid)
+        lines.append(f"• <code>{cid}</code> | <b>{name}</b> → <b>{mins}</b> min")
+
+    await reply_fn("\n".join(lines), parse_mode=ParseMode.HTML)
+
+
+# ── /changetime ───────────────────────────────────────────────────────────────
+
+async def changetime(update: Update, context: CallbackContext) -> None:
+    uid  = update.effective_user.id
+    chat = update.effective_chat
+
+    # ── Owner DM mode ─────────────────────────────────────────────────────────
+    if chat.type == "private":
+        if uid != OWNER_ID:
+            await update.message.reply_text("❌ Owner only.")
+            return
+
+        args = context.args or []
+
+        # /changetime  →  list all groups
+        if not args:
+            await _list_all_groups(
+                context.bot,
+                lambda text, **kw: update.message.reply_text(text, **kw),
+            )
+            return
+
+        # /changetime <minutes>  →  hint (no group_id given)
+        if len(args) == 1:
+            await update.message.reply_text(
+                "⚠️ DM မှာ သုံးပုံ:\n"
+                "<code>/changetime &lt;group_id&gt; &lt;minutes&gt;</code>\n\n"
+                "Group list ကြည့်ရန်:\n"
+                "<code>/changetime</code>",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        # /changetime <group_id> <minutes>
+        group_id_str, minutes_str = args[0], args[1]
+        if not group_id_str.lstrip("-").isdigit() or not minutes_str.lstrip("-").isdigit():
+            await update.message.reply_text("❌ /changetime <group_id> <minutes>")
+            return
+
+        target_cid = int(group_id_str)
+        n          = int(minutes_str)
+        if n < _MIN:
+            await update.message.reply_text(f"❌ အနည်းဆုံး {_MIN} မိနစ်.")
+            return
+        if n > _MAX:
+            await update.message.reply_text(f"❌ အများဆုံး {_MAX} မိနစ် (24 နာရီ).")
+            return
+
+        old = await get_interval(target_cid)
+        await user_totals_collection.find_one_and_update(
+            {"chat_id": target_cid},
+            {"$set": {"drop_interval_minutes": n}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        try:
+            chat_obj = await context.bot.get_chat(target_cid)
+            gname = chat_obj.title or str(target_cid)
+        except Exception:
+            gname = str(target_cid)
+
+        await update.message.reply_text(
+            f"✅ <b>{gname}</b>\n"
+            f"Drop interval: <b>{old}</b> → <b>{n}</b> မိနစ်တိုင်း drop\n"
+            f"<i>(နောက် cycle မှ စတင် apply ဖြစ်မည်)</i>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    # ── Group mode ────────────────────────────────────────────────────────────
     if not await _is_admin(update, context):
         await update.message.reply_text("❌ Admins only.")
         return
 
     if not context.args or not context.args[0].lstrip("-").isdigit():
-        cur = await get_interval(update.effective_chat.id)
+        cur = await get_interval(chat.id)
         await update.message.reply_text(
             f"⏱ လောကြိုက်: <b>{cur}</b> မိနစ်တိုင်း drop\n"
             f"သုံးပုံ: /changetime &lt;{_MIN}–{_MAX}&gt;\n"
@@ -56,9 +151,9 @@ async def changetime(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text(f"❌ အများဆုံး {_MAX} မိနစ် (24 နာရီ).")
         return
 
-    old = await get_interval(update.effective_chat.id)
+    old = await get_interval(chat.id)
     await user_totals_collection.find_one_and_update(
-        {"chat_id": update.effective_chat.id},
+        {"chat_id": chat.id},
         {"$set": {"drop_interval_minutes": n}},
         upsert=True,
         return_document=ReturnDocument.AFTER,
@@ -70,16 +165,60 @@ async def changetime(update: Update, context: CallbackContext) -> None:
     )
 
 
+# ── /resettime ────────────────────────────────────────────────────────────────
+
 async def resettime(update: Update, context: CallbackContext) -> None:
-    if update.effective_chat.type == "private":
-        await update.message.reply_text("❌ Group ထဲမှာသာ သုံးပါ။")
+    uid  = update.effective_user.id
+    chat = update.effective_chat
+
+    # ── Owner DM mode ─────────────────────────────────────────────────────────
+    if chat.type == "private":
+        if uid != OWNER_ID:
+            await update.message.reply_text("❌ Owner only.")
+            return
+
+        args = context.args or []
+
+        # /resettime  →  list all groups
+        if not args:
+            await _list_all_groups(
+                context.bot,
+                lambda text, **kw: update.message.reply_text(text, **kw),
+            )
+            return
+
+        if not args[0].lstrip("-").isdigit():
+            await update.message.reply_text(
+                "သုံးပုံ: <code>/resettime &lt;group_id&gt;</code>",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        target_cid = int(args[0])
+        await user_totals_collection.update_one(
+            {"chat_id": target_cid},
+            {"$unset": {"drop_interval_minutes": ""}},
+        )
+        try:
+            chat_obj = await context.bot.get_chat(target_cid)
+            gname = chat_obj.title or str(target_cid)
+        except Exception:
+            gname = str(target_cid)
+
+        await update.message.reply_text(
+            f"✅ <b>{gname}</b> — Default ပြန်သတ်မှတ်ပြီ:\n"
+            f"<b>{Config.DROP_INTERVAL_MIN}</b> မိနစ်တိုင်း drop",
+            parse_mode=ParseMode.HTML,
+        )
         return
+
+    # ── Group mode ────────────────────────────────────────────────────────────
     if not await _is_admin(update, context):
         await update.message.reply_text("❌ Admins only.")
         return
 
     await user_totals_collection.update_one(
-        {"chat_id": update.effective_chat.id},
+        {"chat_id": chat.id},
         {"$unset": {"drop_interval_minutes": ""}},
     )
     await update.message.reply_text(
@@ -89,4 +228,4 @@ async def resettime(update: Update, context: CallbackContext) -> None:
 
 
 application.add_handler(CommandHandler(["changetime"], changetime))
-application.add_handler(CommandHandler(["resettime"], resettime))
+application.add_handler(CommandHandler(["resettime"],  resettime))
