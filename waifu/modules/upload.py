@@ -274,9 +274,10 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
         return ConversationHandler.END
 
     # ── Auto-store in FILE_STORE_CHAT → get this bot's own file_id ───────────
-    img_url   = photo
-    bot_local = update.get_bot()
+    img_url    = photo
+    bot_local  = update.get_bot()
     store_chat = Config.FILE_STORE_CHAT_ID
+    stored_msg = None
 
     if not photo.startswith("http") and store_chat:
         try:
@@ -304,6 +305,16 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
         "claimed_count": 0,
     }
 
+    # ── Channel caption ────────────────────────────────────────────────────────
+    u        = update.effective_user
+    uname    = escape(u.first_name)
+    chan_cap = (
+        f"<blockquote>"
+        f'🎨『 <a href="tg://user?id={u.id}">{uname}</a> 』'
+        f"uploaded new waifu <b>{escape(name)}</b>"
+        f"</blockquote>"
+    )
+
     try:
         await collection.insert_one(char)
         await update.message.reply_text(
@@ -316,34 +327,51 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
             parse_mode=ParseMode.HTML,
         )
 
-        # ── Notify CHARA_CHANNEL_ID ───────────────────────────────────────────
-        if CHARA_CHANNEL_ID:
-            u        = update.effective_user
-            uname    = escape(u.first_name)
-            chan_cap = (
-                f"<blockquote>"
-                f'🎨『 <a href="tg://user?id={u.id}">{uname}</a> 』'
-                f"uploaded new waifu <b>{escape(name)}</b>"
-                f"</blockquote>"
-            )
+        # ── Channel notification ───────────────────────────────────────────────
+        # If photo was stored to FILE_STORE, edit that message's caption.
+        # Otherwise (or if CHARA_CHANNEL is a different chat), send separately.
+        if stored_msg:
+            try:
+                await stored_msg.edit_caption(
+                    caption=chan_cap, parse_mode=ParseMode.HTML
+                )
+            except Exception as edit_err:
+                from waifu import LOGGER
+                LOGGER.warning("Caption edit failed: %s", edit_err)
+
+            # Also send to CHARA_CHANNEL if it differs from FILE_STORE
+            if CHARA_CHANNEL_ID and str(CHARA_CHANNEL_ID) != str(store_chat):
+                try:
+                    if media_type == "video":
+                        await bot_local.send_video(
+                            chat_id=CHARA_CHANNEL_ID, video=img_url,
+                            caption=chan_cap, parse_mode=ParseMode.HTML,
+                        )
+                    else:
+                        await bot_local.send_photo(
+                            chat_id=CHARA_CHANNEL_ID, photo=img_url,
+                            caption=chan_cap, parse_mode=ParseMode.HTML,
+                        )
+                except Exception as ch_err:
+                    from waifu import LOGGER
+                    LOGGER.warning("CHARA_CHANNEL notify failed: %s", ch_err)
+
+        elif CHARA_CHANNEL_ID:
+            # No FILE_STORE — send directly to channel
             try:
                 if media_type == "video":
                     await bot_local.send_video(
-                        chat_id=CHARA_CHANNEL_ID,
-                        video=img_url,
-                        caption=chan_cap,
-                        parse_mode=ParseMode.HTML,
+                        chat_id=CHARA_CHANNEL_ID, video=img_url,
+                        caption=chan_cap, parse_mode=ParseMode.HTML,
                     )
                 else:
                     await bot_local.send_photo(
-                        chat_id=CHARA_CHANNEL_ID,
-                        photo=img_url,
-                        caption=chan_cap,
-                        parse_mode=ParseMode.HTML,
+                        chat_id=CHARA_CHANNEL_ID, photo=img_url,
+                        caption=chan_cap, parse_mode=ParseMode.HTML,
                     )
             except Exception as ch_err:
                 from waifu import LOGGER
-                LOGGER.warning("Channel notify failed: %s", ch_err)
+                LOGGER.warning("CHARA_CHANNEL notify failed: %s", ch_err)
 
     except Exception as e:
         await update.message.reply_text(
