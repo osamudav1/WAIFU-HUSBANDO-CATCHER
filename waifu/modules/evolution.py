@@ -428,9 +428,11 @@ async def _do_evolve(query, user_id: int, cid: str, target_stars: int, back_page
 
     # ── 3★ announcements for premium rarities ─────────────────────────────────
     if target_stars == 3 and rarity in (GLOBAL_RARITY, SPECIAL_RARITY, UL_RARITY):
-        user_doc  = await user_collection.find_one({"id": user_id})
-        fn        = escape((user_doc or {}).get("first_name", "Someone"))
-        mention   = f'<a href="tg://user?id={user_id}">{fn}</a>'
+        user_doc = await user_collection.find_one({"id": user_id})
+        uname    = (user_doc or {}).get("username") or ""
+        fname    = (user_doc or {}).get("first_name") or ""
+        display  = escape(f"@{uname}") if uname else (escape(fname) if fname else "A Player")
+        mention  = f'<a href="tg://user?id={user_id}">{display}</a>'
 
         if rarity == UL_RARITY:
             await user_collection.update_one(
@@ -438,16 +440,16 @@ async def _do_evolve(query, user_id: int, cid: str, target_stars: int, back_page
                 {"$addToSet": {"badges": GOD_BADGE}},
             )
             ann_text = (
-                f"🌌 <b>GOD OF WAIFU!</b>\n\n"
-                f"{mention} has reached <b>3★</b> on a "
+                f"🌌 <b>GOD OF WAIFU!</b>\n"
+                f"<blockquote>{mention} has reached <b>3★</b> on a "
                 f"<b>{rarity}</b> character!\n"
-                f"🏅 Badge awarded: <b>{GOD_BADGE}</b>"
+                f"🏅 Badge awarded: <b>{GOD_BADGE}</b></blockquote>"
             )
         else:
             ann_text = (
-                f"✨ <b>3★ Achieved!</b>\n\n"
-                f"{mention} has reached <b>3★</b> on a "
-                f"<b>{rarity}</b> character!"
+                f"✨ <b>3★ Achieved!</b>\n"
+                f"<blockquote>{mention} has reached <b>3★</b> on a "
+                f"<b>{rarity}</b> character!</blockquote>"
             )
 
         # Fetch all known group IDs from DB (persists across restarts)

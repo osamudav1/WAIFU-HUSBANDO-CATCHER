@@ -88,7 +88,7 @@ async def broadcast(update: Update, context: CallbackContext) -> None:
         star_field = f"waifu_stars.{char_id}"
         three_star_users = await user_collection.find(
             {star_field: 3},
-            {"id": 1, "first_name": 1},
+            {"id": 1, "first_name": 1, "username": 1},
         ).to_list(length=5000)
 
         if not three_star_users:
@@ -116,22 +116,24 @@ async def broadcast(update: Update, context: CallbackContext) -> None:
 
         ok = fail = 0
         for u in three_star_users:
-            uid  = u["id"]
-            fn   = escape(u.get("first_name", "Someone"))
-            mention = f'<a href="tg://user?id={uid}">{fn}</a>'
+            uid      = u["id"]
+            uname    = u.get("username") or ""
+            fname    = u.get("first_name") or ""
+            display  = escape(f"@{uname}") if uname else (escape(fname) if fname else "A Player")
+            mention  = f'<a href="tg://user?id={uid}">{display}</a>'
 
             if rarity == UL_RARITY:
                 ann_text = (
-                    f"🌌 <b>GOD OF WAIFU!</b>\n\n"
-                    f"{mention} has reached <b>3★</b> on a "
+                    f"🌌 <b>GOD OF WAIFU!</b>\n"
+                    f"<blockquote>{mention} has reached <b>3★</b> on a "
                     f"<b>{rarity}</b> character!\n"
-                    f"🏅 Badge awarded: <b>{GOD_BADGE}</b>"
+                    f"🏅 Badge awarded: <b>{GOD_BADGE}</b></blockquote>"
                 )
             else:
                 ann_text = (
-                    f"✨ <b>3★ Achieved!</b>\n\n"
-                    f"{mention} has reached <b>3★</b> on a "
-                    f"<b>{rarity}</b> character!"
+                    f"✨ <b>3★ Achieved!</b>\n"
+                    f"<blockquote>{mention} has reached <b>3★</b> on a "
+                    f"<b>{rarity}</b> character!</blockquote>"
                 )
 
             tasks = [_send_msg(context.bot, gid, ann_text) for gid in group_ids]
