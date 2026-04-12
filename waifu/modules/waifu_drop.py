@@ -180,9 +180,11 @@ async def _send_drop(chat_id: int, bot, forced_char: dict | None = None) -> None
     _is_file_upload = not isinstance(img_to_send, str)
     _write_timeout  = 60 if _is_file_upload else 10
 
+    rar_emoji_d, rar_name_d = _split_rarity(char.get("rarity", ""))
     drop_caption = (
-        "✨ <b>A new character appeared!</b>\n\n"
-        "<i>Use /guess [name] to add them to your harem!</i>"
+        f"✨ <b>A new character appeared!</b>\n"
+        f"{rar_emoji_d} <b>{rar_name_d}</b>\n\n"
+        f"<i>Use /guess [name] to add them to your harem!</i>"
     )
 
     try:
