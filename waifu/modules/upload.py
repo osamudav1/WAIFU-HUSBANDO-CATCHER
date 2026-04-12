@@ -22,7 +22,7 @@ from telegram.ext import (
     ConversationHandler, MessageHandler, filters,
 )
 
-from waifu import application, collection, user_collection, db, sudo_users, OWNER_ID, CHARA_CHANNEL_ID
+from waifu import application, collection, user_collection, db, sudo_users, OWNER_ID, CHARA_CHANNEL_ID, GROUP_ID
 from waifu.config import Config
 
 RARITY_MAP  = Config.RARITY_MAP
@@ -372,6 +372,23 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
             except Exception as ch_err:
                 from waifu import LOGGER
                 LOGGER.warning("CHARA_CHANNEL notify failed: %s", ch_err)
+
+        # ── Notify GROUP ───────────────────────────────────────────────────────
+        if GROUP_ID and str(GROUP_ID) != str(store_chat):
+            try:
+                if media_type == "video":
+                    await bot_local.send_video(
+                        chat_id=GROUP_ID, video=img_url,
+                        caption=chan_cap, parse_mode=ParseMode.HTML,
+                    )
+                else:
+                    await bot_local.send_photo(
+                        chat_id=GROUP_ID, photo=img_url,
+                        caption=chan_cap, parse_mode=ParseMode.HTML,
+                    )
+            except Exception as grp_err:
+                from waifu import LOGGER
+                LOGGER.warning("GROUP notify failed: %s", grp_err)
 
     except Exception as e:
         await update.message.reply_text(
