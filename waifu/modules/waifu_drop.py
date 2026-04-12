@@ -423,8 +423,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
             "$push": {"characters": char_to_push},
             "$inc":  inc_fields,
             "$set":  {"username": u.username, "first_name": u.first_name},
-            "$setOnInsert": {"coins": 0, "wins": 0, "favorites": [],
-                             "wanted_coins": 0, "black_material": 0, "badges": []},
+            "$setOnInsert": {"coins": 0, "wins": 0, "favorites": []},
         },
         upsert=True,
     )
