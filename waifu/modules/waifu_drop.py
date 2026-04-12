@@ -73,12 +73,6 @@ _WEIGHT_DEFAULT = 1    # fallback weight for unknown rarity
 # ── Premium rarity rules ──────────────────────────────────────────────────────
 _PREMIUM_RARITIES = {"🌐 Global", "💮 Special Edition", "🌌 Universal Limited"}
 
-# Wanted Coins granted on first catch (no star) — premium rarities only
-_CATCH_WC: dict[str, int] = {
-    "🌐 Global":            600,
-    "💮 Special Edition":  1_000,
-    "🌌 Universal Limited": 3_000,
-}
 
 _DEFAULT_LIMIT = 10    # fallback global limit if character has no limit field
 
@@ -424,13 +418,8 @@ async def guess(update: Update, context: CallbackContext) -> None:
         global_rank_str  = f"{global_rank_num:03d}"  # zero-padded: "001"
         char_to_push["global_rank"] = global_rank_str
 
-    # Wanted Coins for premium rarities
-    wc_earned = _CATCH_WC.get(char_rarity, 0)
-
     # Update user document
     inc_fields: dict = {"total_guesses": 1, "xp": xp_earned}
-    if wc_earned:
-        inc_fields["wanted_coins"] = wc_earned
 
     await user_collection.update_one(
         {"id": user_id},

@@ -3,8 +3,6 @@ modules/admintools.py — Owner-only admin tools.
 
 /coins <user_id> +<amount>   — add coins to a user
 /coins <user_id> -<amount>   — subtract coins from a user
-/addwc <user_id> <amount>    — add Wanted Coins
-/addbm <user_id> <amount>    — add Black Material
 
 Only works in owner's private DM.
 """
@@ -23,8 +21,6 @@ def _is_owner_pm(update: Update) -> bool:
         and update.effective_chat.type == "private"
     )
 
-
-# ── /coins <user_id> +/-<amount> ──────────────────────────────────────────────
 
 async def coins_cmd(update: Update, context: CallbackContext) -> None:
     if not _is_owner_pm(update):
@@ -85,86 +81,4 @@ async def coins_cmd(update: Update, context: CallbackContext) -> None:
     )
 
 
-# ── /addwc <user_id> <amount> ─────────────────────────────────────────────────
-
-async def addwc_cmd(update: Update, context: CallbackContext) -> None:
-    if not _is_owner_pm(update):
-        return
-
-    args = context.args
-    if len(args) < 2:
-        await update.message.reply_text("Usage: /addwc <user_id> <amount>")
-        return
-
-    try:
-        target_id = int(args[0])
-        amount    = int(args[1])
-    except ValueError:
-        await update.message.reply_text("❌ Invalid input.")
-        return
-
-    target = await user_collection.find_one({"id": target_id})
-    if not target:
-        await update.message.reply_text(f"❌ User <code>{target_id}</code> not found.", parse_mode=ParseMode.HTML)
-        return
-
-    await user_collection.update_one(
-        {"id": target_id},
-        {"$inc": {"wanted_coins": amount}},
-    )
-
-    updated = await user_collection.find_one({"id": target_id}, {"wanted_coins": 1})
-    new_bal = (updated or {}).get("wanted_coins", 0)
-    fn      = escape(target.get("first_name", str(target_id)))
-
-    await update.message.reply_text(
-        f"✅ <b>{fn}</b> (<code>{target_id}</code>)\n"
-        f"💰 Wanted Coins: +{amount:,}  →  Balance: <b>{new_bal:,} WC</b>",
-        parse_mode=ParseMode.HTML,
-    )
-
-
-# ── /addbm <user_id> <amount> ─────────────────────────────────────────────────
-
-async def addbm_cmd(update: Update, context: CallbackContext) -> None:
-    if not _is_owner_pm(update):
-        return
-
-    args = context.args
-    if len(args) < 2:
-        await update.message.reply_text("Usage: /addbm <user_id> <amount>")
-        return
-
-    try:
-        target_id = int(args[0])
-        amount    = int(args[1])
-    except ValueError:
-        await update.message.reply_text("❌ Invalid input.")
-        return
-
-    target = await user_collection.find_one({"id": target_id})
-    if not target:
-        await update.message.reply_text(f"❌ User <code>{target_id}</code> not found.", parse_mode=ParseMode.HTML)
-        return
-
-    await user_collection.update_one(
-        {"id": target_id},
-        {"$inc": {"black_material": amount}},
-    )
-
-    updated = await user_collection.find_one({"id": target_id}, {"black_material": 1})
-    new_bal = (updated or {}).get("black_material", 0)
-    fn      = escape(target.get("first_name", str(target_id)))
-
-    await update.message.reply_text(
-        f"✅ <b>{fn}</b> (<code>{target_id}</code>)\n"
-        f"🔩 Black Material: +{amount}  →  Balance: <b>{new_bal} 🔩</b>",
-        parse_mode=ParseMode.HTML,
-    )
-
-
-# ── Register ──────────────────────────────────────────────────────────────────
-
-application.add_handler(CommandHandler("coins",  coins_cmd,  block=False))
-application.add_handler(CommandHandler("addwc",  addwc_cmd,  block=False))
-application.add_handler(CommandHandler("addbm",  addbm_cmd,  block=False))
+application.add_handler(CommandHandler("coins", coins_cmd, block=False))

@@ -60,7 +60,7 @@ async def _build_list_view(
     chars      = user["characters"]
     owner_name = user.get("first_name", str(user_id))
     fav_id     = (user.get("favorites") or [None])[0]
-    stars_map  = user.get("waifu_stars", {})
+    stars_map  = {}
 
     # Count duplicates
     id_counts: dict[str, int] = {}
@@ -113,12 +113,11 @@ async def _build_list_view(
         for c in achars:
             rar   = _rarity_icon(c.get("rarity", ""))
             cnt   = id_counts.get(c["id"], 1)
-            stars = "★" * stars_map.get(c["id"], 0) if stars_map.get(c["id"], 0) > 0 else ""
             fav   = " ⭐" if c["id"] == fav_id else ""
             g_rank = (f" 🌐<code>#{c['global_rank']}</code>"
                       if c.get("global_rank") else "")
             lines.append(
-                f"🍀 <code>{c['id']}</code> | {rar} | {escape(c['name'])}{fav}{stars}{g_rank} ×{cnt}"
+                f"🍀 <code>{c['id']}</code> | {rar} | {escape(c['name'])}{fav}{g_rank} ×{cnt}"
             )
         lines.append("")
 
