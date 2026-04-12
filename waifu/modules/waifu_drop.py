@@ -276,23 +276,32 @@ async def message_counter(update: Update, context: CallbackContext) -> None:
             LOGGER.info("Message threshold (%d) reached → drop for chat %s",
                         threshold, chat_id)
 
-    # Anti-spam tracking (warn only)
-    last = _last_user.get(chat_id)
-    if last and last["user_id"] == user_id:
-        last["count"] += 1
-        if last["count"] >= 10:
+    # Anti-spam: warn if user sends ≥15 messages within 10 seconds
+    _SPAM_WINDOW  = 10    # seconds
+    _SPAM_LIMIT   = 15    # messages in that window
+    _WARN_COOLDOWN = 600  # seconds before warning same user again
+
+    now = time.time()
+    key = (chat_id, user_id)
+    window = _last_user.get(key)
+
+    if window and now - window["start"] <= _SPAM_WINDOW:
+        window["count"] += 1
+        if window["count"] >= _SPAM_LIMIT:
             warned_at = _warned.get(user_id, 0)
-            if time.time() - warned_at >= 600:
-                _warned[user_id] = time.time()
+            if now - warned_at >= _WARN_COOLDOWN:
+                _warned[user_id] = now
+                window["count"] = 0   # reset after warning
                 try:
                     await update.message.reply_text(
                         f"⚠️ {escape(update.effective_user.first_name)}, "
-                        "consecutive messages များလွန်းတယ်!"
+                        "message များလွန်းနေတယ်!"
                     )
                 except Exception:
                     pass
     else:
-        _last_user[chat_id] = {"user_id": user_id, "count": 1}
+        # Window expired or new user — start fresh
+        _last_user[key] = {"start": now, "count": 1}
 
 
 def restart_drop_task(chat_id: int, bot) -> None:
