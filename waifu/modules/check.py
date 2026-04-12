@@ -68,6 +68,13 @@ async def check(update: Update, context: CallbackContext) -> None:
 
     rar_display = _rarity_display(rarity)
 
+    # Build rarity line for the new box style
+    rar_parts  = rarity.split(" ", 1)
+    rar_emoji  = rar_parts[0] if rar_parts else "🌟"
+    rar_name   = rar_parts[1] if len(rar_parts) > 1 else rarity
+    is_global  = rar_name.strip().lower() == "global"
+    global_no  = f"{global_cnt:03d}" if is_global else "♻️"
+
     catchers = await _top_catchers(cid)
     catcher_lines = ""
     for row in catchers:
@@ -89,11 +96,12 @@ async def check(update: Update, context: CallbackContext) -> None:
 
     caption = (
         f"OwO! Check out this character!\n\n"
-        f"<b>{anime}</b>\n"
-        f"<b>{cid}</b>: {name}\n"
-        f"(<i>🌟 {rar_display}</i>)\n"
-        f"{vd_tag}\n"
-        f"🌍 <b>CAUGHT GLOBALLY: {global_cnt} times</b>\n\n"
+        f"╭──\n"
+        f"├─➩ {anime}\n"
+        f"├─➩ <b>{cid}</b>: {name}\n"
+        f"├─➩ RARITY: {rar_emoji} {rar_name} | {global_no}\n"
+        f"{vd_tag}"
+        f"\n🌍 <b>CAUGHT GLOBALLY: {global_cnt} times</b>\n\n"
         f"🥇 <b>TOP 10 CATCHERS OF THIS CHARACTER!</b>\n"
         f"{catcher_lines}"
     )
