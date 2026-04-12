@@ -116,7 +116,7 @@ async def send_groups_doc(update: Update, context: CallbackContext) -> None:
     await context.bot.send_document(update.effective_chat.id, buf)
 
 
-_RANK_MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+_RANK_MEDALS = ["🥇", "🥈", "🥉", "🎖️", "🎖️", "🎖️", "🎖️", "🎖️", "🎖️", "🎖️"]
 
 
 async def ranking(update: Update, context: CallbackContext) -> None:
