@@ -390,20 +390,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
     old_xp    = (old_doc or {}).get("xp", 0)
     old_level = _calc_level(old_xp)[0]
 
-    # ── Premium rarity: max 2 copies per user ─────────────────────────────────
     char_rarity = char.get("rarity", "")
-    if char_rarity in _PREMIUM_RARITIES:
-        existing = sum(
-            1 for c in (old_doc or {}).get("characters", [])
-            if c.get("id") == char.get("id")
-        )
-        if existing >= _PREMIUM_MAX_COPIES:
-            await update.message.reply_text(
-                f"❌ မင်းမှာ <b>{escape(char['name'])}</b> ကဒ် {_PREMIUM_MAX_COPIES} ကဒ်ရှိပြီး!\n"
-                f"Premium card တွေ user တစ်ယောက် {_PREMIUM_MAX_COPIES} ကဒ်ထက်မပိုရ.",
-                parse_mode=ParseMode.HTML,
-            )
-            return
 
     # Update global claimed count
     char_global_limit = char.get("limit", _DEFAULT_LIMIT)

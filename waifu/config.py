@@ -35,7 +35,7 @@ class Config:
     FILE_STORE_CHAT_ID:   int   = int(os.environ.get("FILE_STORE_CHAT_ID", "0"))
 
     # Economy
-    DAILY_COINS:     int = 200
+    DAILY_COINS:     int = 100
     DUEL_WIN_COINS:  int = 150
     DUEL_LOSE_COINS: int = 30
 
