@@ -41,7 +41,7 @@ _msg_count:        dict[int, int]      = {}   # chat_id → messages since last 
 _drop_msg:         dict[int, object]   = {}   # chat_id → sent drop Message object
 _expiry_tasks:     dict[int, asyncio.Task] = {} # chat_id → expiry countdown task
 
-_DROP_EXPIRE_SECS   = 300   # 5 minutes
+_DROP_EXPIRE_SECS   = 180   # 3 minutes
 _DROP_MSG_DEFAULT   = 10    # default messages needed to trigger a drop
 
 # ── XP per correct guess (by rarity) ─────────────────────────────────────────
