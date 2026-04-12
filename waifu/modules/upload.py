@@ -318,13 +318,13 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
 
         # ── Notify CHARA_CHANNEL_ID ───────────────────────────────────────────
         if CHARA_CHANNEL_ID:
-            u         = update.effective_user
-            uname     = escape(u.first_name)
-            rar_emoji = rarity.split(" ", 1)[0] if rarity else "🎴"
-            chan_cap  = (
-                f'• 『 <a href="tg://user?id={u.id}">{uname}</a> 』'
-                f"• uploaded new waifu <b>{escape(name)}</b>\n"
-                f"📺 {escape(anime)}  |  {rar_emoji} {escape(rarity)}  |  🆔 <code>{char_id}</code>"
+            u        = update.effective_user
+            uname    = escape(u.first_name)
+            chan_cap = (
+                f"<blockquote>"
+                f'🎨『 <a href="tg://user?id={u.id}">{uname}</a> 』'
+                f"uploaded new waifu <b>{escape(name)}</b>"
+                f"</blockquote>"
             )
             try:
                 if media_type == "video":
