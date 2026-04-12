@@ -49,7 +49,7 @@ class Config:
         9: "🪞 Supreme",
         6: "💮 Special Edition",
         7: "🌐 Global",
-        8: "🌌 Universal Limited",
+        8: "🌌 Universal",
     }
 
     @classmethod

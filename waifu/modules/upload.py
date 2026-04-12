@@ -104,7 +104,7 @@ def _rarity_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🌐 Global",            callback_data="rar:7"),
         ],
         [
-            InlineKeyboardButton("🌌 Universal Limited", callback_data="rar:8"),
+            InlineKeyboardButton("🌌 Universal",         callback_data="rar:8"),
         ],
         [InlineKeyboardButton("❌ Cancel",               callback_data="rar:cancel")],
     ])

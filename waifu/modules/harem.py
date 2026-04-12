@@ -32,7 +32,7 @@ _MEDALS = {
     "🪞 Supreme":           "🪞",
     "💮 Special Edition":   "💮",
     "🌐 Global":            "🌐",
-    "🌌 Universal Limited": "🌌",
+    "🌌 Universal":         "🌌",
 }
 
 
