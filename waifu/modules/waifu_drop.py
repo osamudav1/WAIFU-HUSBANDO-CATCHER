@@ -185,6 +185,14 @@ async def _send_drop(chat_id: int, bot, forced_char: dict | None = None) -> None
         "<i>Use /guess [name] to add them to your harem!</i>"
     )
 
+    # ── 5-second hint before drop ─────────────────────────────────────────────
+    hint_msg = None
+    try:
+        hint_msg = await bot.send_message(chat_id=chat_id, text="🪄")
+    except Exception:
+        pass
+    await asyncio.sleep(5)
+
     try:
         LOGGER.info("Sending PHOTO drop for char %s", char["id"])
         msg = await bot.send_photo(
@@ -195,6 +203,13 @@ async def _send_drop(chat_id: int, bot, forced_char: dict | None = None) -> None
             write_timeout=_write_timeout,
             read_timeout=30,
         )
+        # Delete hint message now that the card is sent
+        if hint_msg:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=hint_msg.message_id)
+            except Exception:
+                pass
+
         if msg.photo:
             new_fid = msg.photo[-1].file_id
             if new_fid != char.get("img_url"):
