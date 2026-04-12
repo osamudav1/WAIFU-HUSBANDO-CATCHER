@@ -29,7 +29,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
-from waifu import application, user_collection, top_global_groups_collection, LOGGER
+from waifu import application, user_collection, LOGGER
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -426,47 +426,12 @@ async def _do_evolve(query, user_id: int, cid: str, target_stars: int, back_page
             show_alert=True,
         )
 
-    # ── 3★ announcements for premium rarities ─────────────────────────────────
-    if target_stars == 3 and rarity in (GLOBAL_RARITY, SPECIAL_RARITY, UL_RARITY):
-        user_doc = await user_collection.find_one({"id": user_id})
-        uname    = (user_doc or {}).get("username") or ""
-        fname    = (user_doc or {}).get("first_name") or ""
-        display  = escape(f"@{uname}") if uname else (escape(fname) if fname else "A Player")
-        mention  = f'<a href="tg://user?id={user_id}">{display}</a>'
-
-        if rarity == UL_RARITY:
-            await user_collection.update_one(
-                {"id": user_id},
-                {"$addToSet": {"badges": GOD_BADGE}},
-            )
-            ann_text = (
-                f"🌌 <b>GOD OF WAIFU!</b>\n"
-                f"<blockquote>{mention} has reached <b>3★</b> on a "
-                f"<b>{rarity}</b> character!\n"
-                f"🏅 Badge awarded: <b>{GOD_BADGE}</b></blockquote>"
-            )
-        else:
-            ann_text = (
-                f"✨ <b>3★ Achieved!</b>\n"
-                f"<blockquote>{mention} has reached <b>3★</b> on a "
-                f"<b>{rarity}</b> character!</blockquote>"
-            )
-
-        # Fetch all known group IDs from DB (persists across restarts)
-        group_docs = await top_global_groups_collection.find(
-            {}, {"group_id": 1}
-        ).to_list(length=500)
-        group_ids = [d["group_id"] for d in group_docs if "group_id" in d]
-
-        sent = set()
-        for gid in group_ids:
-            if gid in sent:
-                continue
-            sent.add(gid)
-            try:
-                await query.bot.send_message(gid, ann_text, parse_mode=ParseMode.HTML)
-            except Exception as e:
-                LOGGER.debug("3★ announce to %s failed: %s", gid, e)
+    # ── UL 3★: award God Of Waifu badge ──────────────────────────────────────
+    if target_stars == 3 and rarity == UL_RARITY:
+        await user_collection.update_one(
+            {"id": user_id},
+            {"$addToSet": {"badges": GOD_BADGE}},
+        )
 
     # Refresh the view
     await _show_view(query, user_id, cid, back_page)
