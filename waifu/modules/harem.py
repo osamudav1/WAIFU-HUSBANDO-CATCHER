@@ -159,7 +159,7 @@ async def _build_default_body(
             fav   = " ⭐" if c["id"] == fav_id else ""
             g_rank = (f" 🌐<code>#{c['global_rank']}</code>" if c.get("global_rank") else "")
             lines.append(
-                f"🍀 <code>{c['id']}</code> | {rar} | {escape(c['name'])} [{rar}]{fav}{g_rank} (x{cnt})"
+                f"🍀 <code>{c['id']}</code> | {rar} | {escape(c['name'])}{fav}{g_rank} (x{cnt})"
             )
         lines.append("")
 
