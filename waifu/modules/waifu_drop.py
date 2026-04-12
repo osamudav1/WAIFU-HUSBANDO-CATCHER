@@ -48,9 +48,11 @@ _DROP_MSG_DEFAULT   = 10    # default messages needed to trigger a drop
 _XP_MAP: dict[str, int] = {
     "⚪ Common":            15,
     "🟣 Rare":              30,
+    "🟤 Medium":            42,
     "🟡 Legendary":         55,
     "🔮 Mythical":         120,
     "💮 Special Edition":  250,
+    "🌐 Global":           400,
     "🌌 Universal Limited": 1000,
 }
 _XP_DEFAULT    = 15    # fallback if rarity string unrecognised
@@ -60,9 +62,11 @@ _XP_DEFAULT    = 15    # fallback if rarity string unrecognised
 _DROP_WEIGHT: dict[str, int] = {
     "⚪ Common":            80,
     "🟣 Rare":              75,
+    "🟤 Medium":            70,
     "🟡 Legendary":         65,
     "🔮 Mythical":          30,
     "💮 Special Edition":   18,
+    "🌐 Global":            10,
     "🌌 Universal Limited":  5,
 }
 _WEIGHT_DEFAULT = 1    # fallback weight for unknown rarity
@@ -386,11 +390,19 @@ async def guess(update: Update, context: CallbackContext) -> None:
         {"$inc": {"claimed_count": 1}},
     )
 
+    # ── Global rarity: assign sequential rank number ───────────────────────────
+    global_rank_str = None
+    char_to_push    = dict(char)   # copy so we don't mutate the shared dict
+    if char.get("rarity") == "🌐 Global":
+        global_rank_num  = char_new_claimed          # 1st catcher → 1, 2nd → 2 …
+        global_rank_str  = f"{global_rank_num:03d}"  # zero-padded: "001"
+        char_to_push["global_rank"] = global_rank_str
+
     # Update user document
     await user_collection.update_one(
         {"id": user_id},
         {
-            "$push": {"characters": char},
+            "$push": {"characters": char_to_push},
             "$inc":  {"total_guesses": 1, "xp": xp_earned},
             "$set":  {"username": u.username, "first_name": u.first_name},
             "$setOnInsert": {"coins": 0, "wins": 0, "favorites": []},
@@ -444,6 +456,12 @@ async def guess(update: Update, context: CallbackContext) -> None:
         if is_sold_out else ""
     )
 
+    # Global rank line (only for 🌐 Global rarity)
+    global_rank_line = (
+        f"🌐 <b>Global Ranking: <code>#{global_rank_str}</code></b>\n"
+        if global_rank_str else ""
+    )
+
     # Total unique characters owned (after this catch)
     updated_user = await user_collection.find_one({"id": user_id}, {"characters": 1})
     total_owned  = len({c["id"] for c in (updated_user or {}).get("characters", [])})
@@ -460,6 +478,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
         f', ʏᴏᴜ ɢᴏᴛ ᴀ ɴᴇᴡ ᴄʜᴀʀᴀᴄᴛᴇʀ!\n\n'
         f'🫧 Nᴀᴍᴇ: <b>{escape(char["name"])}</b>\n'
         f'{rar_emoji} 𝙍𝘼𝙍𝙄𝙏𝙔: {rar_name}\n'
+        f'{global_rank_line}'
         f'🏖️ Aɴɪᴍᴇ: {escape(char["anime"])} '
         f'(<b>{char_new_claimed}/{char_global_limit}</b>)\n\n'
         f'Added to your harem! +{xp_earned} XP ✨'

@@ -26,9 +26,11 @@ _CHARS_PER_PAGE = 10
 _MEDALS = {
     "⚪ Common":            "⚪",
     "🟣 Rare":              "🟣",
+    "🟤 Medium":            "🟤",
     "🟡 Legendary":         "🟡",
     "🔮 Mythical":          "🔮",
     "💮 Special Edition":   "💮",
+    "🌐 Global":            "🌐",
     "🌌 Universal Limited": "🌌",
 }
 
@@ -113,8 +115,10 @@ async def _build_list_view(
             cnt   = id_counts.get(c["id"], 1)
             stars = "★" * stars_map.get(c["id"], 0) if stars_map.get(c["id"], 0) > 0 else ""
             fav   = " ⭐" if c["id"] == fav_id else ""
+            g_rank = (f" 🌐<code>#{c['global_rank']}</code>"
+                      if c.get("global_rank") else "")
             lines.append(
-                f"🍀 <code>{c['id']}</code> | {rar} | {escape(c['name'])}{fav}{stars} ×{cnt}"
+                f"🍀 <code>{c['id']}</code> | {rar} | {escape(c['name'])}{fav}{stars}{g_rank} ×{cnt}"
             )
         lines.append("")
 

@@ -43,10 +43,12 @@ class Config:
     RARITY_MAP: dict[int, str] = {
         1: "⚪ Common",
         2: "🟣 Rare",
-        3: "🟡 Legendary",
-        4: "🔮 Mythical",
-        5: "💮 Special Edition",
-        6: "🌌 Universal Limited",
+        3: "🟤 Medium",
+        4: "🟡 Legendary",
+        5: "🔮 Mythical",
+        6: "💮 Special Edition",
+        7: "🌐 Global",
+        8: "🌌 Universal Limited",
     }
 
     @classmethod

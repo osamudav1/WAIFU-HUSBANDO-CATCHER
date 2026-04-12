@@ -90,14 +90,18 @@ def _rarity_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("⚪ Common",            callback_data="rar:1"),
             InlineKeyboardButton("🟣 Rare",              callback_data="rar:2"),
+            InlineKeyboardButton("🟤 Medium",            callback_data="rar:3"),
         ],
         [
-            InlineKeyboardButton("🟡 Legendary",         callback_data="rar:3"),
-            InlineKeyboardButton("🔮 Mythical",          callback_data="rar:4"),
+            InlineKeyboardButton("🟡 Legendary",         callback_data="rar:4"),
+            InlineKeyboardButton("🔮 Mythical",          callback_data="rar:5"),
         ],
         [
-            InlineKeyboardButton("💮 Special Edition",   callback_data="rar:5"),
-            InlineKeyboardButton("🌌 Universal Limited", callback_data="rar:6"),
+            InlineKeyboardButton("💮 Special Edition",   callback_data="rar:6"),
+            InlineKeyboardButton("🌐 Global",            callback_data="rar:7"),
+        ],
+        [
+            InlineKeyboardButton("🌌 Universal Limited", callback_data="rar:8"),
         ],
         [InlineKeyboardButton("❌ Cancel",               callback_data="rar:cancel")],
     ])
