@@ -572,32 +572,6 @@ async def guess(update: Update, context: CallbackContext) -> None:
         )
 
 
-# ── /fav ──────────────────────────────────────────────────────────────────────
-
-async def fav(update: Update, context: CallbackContext) -> None:
-    user_id = update.effective_user.id
-    if not context.args:
-        await update.message.reply_text("Usage: /fav <character_id>")
-        return
-
-    char_id  = context.args[0]
-    user_doc = await user_collection.find_one({"id": user_id})
-    if not user_doc:
-        await update.message.reply_text("You haven't guessed any characters yet.")
-        return
-
-    char = next((c for c in user_doc.get("characters", []) if c["id"] == char_id), None)
-    if not char:
-        await update.message.reply_text("That character isn't in your collection.")
-        return
-
-    await user_collection.update_one({"id": user_id}, {"$set": {"favorites": [char_id]}})
-    await update.message.reply_text(
-        f"⭐ <b>{escape(char['name'])}</b> set as your favourite!",
-        parse_mode=ParseMode.HTML,
-    )
-
-
 # ── /forcedrop ────────────────────────────────────────────────────────────────
 
 async def forcedrop(update: Update, context: CallbackContext) -> None:
@@ -746,7 +720,6 @@ _announce_conv = ConversationHandler(
 application.add_handler(CommandHandler(
     ["guess", "protecc", "collect", "grab", "hunt"], guess, block=False
 ))
-application.add_handler(CommandHandler("fav",            fav,              block=False))
 application.add_handler(CommandHandler("forcedrop",      forcedrop,        block=False))
 application.add_handler(CommandHandler("cleardropannounce", cleardropannounce, block=False))
 application.add_handler(_announce_conv)

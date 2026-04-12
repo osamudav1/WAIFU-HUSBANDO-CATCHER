@@ -126,10 +126,11 @@ async def fav_callback(update: Update, context: CallbackContext) -> None:
         name = escape((char or {}).get("name", char_id))
 
         await q.answer(f"⭐ {name} set as favourite!", show_alert=False)
-        await q.edit_message_caption(
-            f"⭐ <b>{name}</b> has been set as your favourite character!",
-            parse_mode=ParseMode.HTML,
-        )
+        done_text = f"⭐ <b>{name}</b> has been set as your favourite character!"
+        if q.message.photo:
+            await q.edit_message_caption(done_text, parse_mode=ParseMode.HTML)
+        else:
+            await q.edit_message_text(done_text, parse_mode=ParseMode.HTML)
 
 
 application.add_handler(CommandHandler("fav", fav, block=False))
