@@ -530,11 +530,6 @@ async def guess(update: Update, context: CallbackContext) -> None:
         )],
     ])
 
-    wc_line = (
-        f"💰 <b>+{wc_earned:,} Wanted Coins</b> obtained!\n"
-        if wc_earned else ""
-    )
-
     caption = (
         f'🪷 <a href="tg://user?id={user_id}">{escape(u.first_name)}</a>'
         f', ʏᴏᴜ ɢᴏᴛ ᴀ ɴᴇᴡ ᴄʜᴀʀᴀᴄᴛᴇʀ!\n\n'
@@ -543,7 +538,6 @@ async def guess(update: Update, context: CallbackContext) -> None:
         f'{global_rank_line}'
         f'🏖️ Aɴɪᴍᴇ: {escape(char["anime"])} '
         f'(<b>{char_new_claimed}/{char_global_limit}</b>)\n\n'
-        f'{wc_line}'
         f'Added to your harem! +{xp_earned} XP ✨'
         f'{sold_out_line}'
     )
