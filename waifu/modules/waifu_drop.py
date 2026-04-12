@@ -72,7 +72,6 @@ _WEIGHT_DEFAULT = 1    # fallback weight for unknown rarity
 
 # ── Premium rarity rules ──────────────────────────────────────────────────────
 _PREMIUM_RARITIES = {"🌐 Global", "💮 Special Edition", "🌌 Universal Limited"}
-_PREMIUM_MAX_COPIES = 2   # max copies a user may hold for premium rarities
 
 # Wanted Coins granted on first catch (no star) — premium rarities only
 _CATCH_WC: dict[str, int] = {
