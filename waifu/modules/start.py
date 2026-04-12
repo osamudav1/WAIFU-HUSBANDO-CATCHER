@@ -91,7 +91,7 @@ SECTION_LABELS = {
 
 
 def _group_kb(uid: int | None = None) -> InlineKeyboardMarkup:
-    """4-button keyboard shown when /start is used inside a group."""
+    """3-button keyboard shown when /start is used inside a group."""
     waifus_btn = (
         InlineKeyboardButton("🔱 My Waifus", switch_inline_query_current_chat=f"harem.{uid}")
         if uid else
@@ -99,9 +99,8 @@ def _group_kb(uid: int | None = None) -> InlineKeyboardMarkup:
     )
     return InlineKeyboardMarkup([
         [waifus_btn,
-         InlineKeyboardButton("👤 Profile",  callback_data="act:profile")],
-        [InlineKeyboardButton("💰 Daily",    callback_data="act:daily"),
-         InlineKeyboardButton("🎴 My Harem", callback_data="act:harem")],
+         InlineKeyboardButton("👤 Profile", callback_data="act:profile")],
+        [InlineKeyboardButton("👨‍💻 Dᴇᴠᴇʟᴏᴘᴇʀ", url=f"tg://user?id={OWNER_ID}")],
     ])
 
 
