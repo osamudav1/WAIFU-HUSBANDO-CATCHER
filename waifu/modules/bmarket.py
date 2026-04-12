@@ -193,9 +193,8 @@ async def _bm_callback(update: Update, context: CallbackContext) -> None:
         {"id": user_id},
         {
             "$inc": {"coins": -total, "black_material": qty},
-            "$setOnInsert": {"wanted_coins": 0, "black_material": 0, "badges": []},
         },
-        upsert=True,
+        upsert=False,
     )
     await bm_market_collection.update_one(
         {"_id": _STORE_ID},
