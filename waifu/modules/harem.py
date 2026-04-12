@@ -317,7 +317,7 @@ async def hmode_callback(update: Update, context: CallbackContext) -> None:
             upsert=True,
         )
         await q.edit_message_text(
-            "🦕 <b>Preference reset!</b>\n\nDefault mode + Sort by Anime ပြန်ရောက်သွားပြီ။",
+            "🎨 <b>All Preferences Have Been Reset.</b>🎨",
             parse_mode=ParseMode.HTML,
         )
         return
