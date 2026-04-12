@@ -12,6 +12,7 @@ import asyncio
 import math
 import random
 import time
+from datetime import datetime, timezone
 from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -381,6 +382,22 @@ async def guess(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text("❌ Wrong name, try again!")
         return
 
+    # ── Daily catch limit (25/day) ────────────────────────────────────────────
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    lim_doc   = await user_collection.find_one(
+        {"id": user_id}, {"daily_catch_date": 1, "daily_catch_count": 1}
+    )
+    last_date    = (lim_doc or {}).get("daily_catch_date", "")
+    daily_count  = (lim_doc or {}).get("daily_catch_count", 0) if last_date == today_str else 0
+
+    if daily_count >= 25:
+        await update.message.reply_text(
+            "🎃 ʏᴏᴜʀ ᴄᴀᴛᴄʜ ʟɪᴍɪᴛ ɪs ʀᴇᴀᴄʜᴇᴅ.\n"
+            "ʏᴏᴜ ᴄᴀɴ ᴏɴʟʏ ᴄᴀᴛᴄʜ 25 ᴄʜᴀʀᴀᴄᴛᴇʀs ᴘᴇʀ ᴅᴀʏ.\n"
+            "ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ ᴜɴᴛɪʟ ᴛʜᴇ ɴᴇᴡ ᴅᴀʏ."
+        )
+        return
+
     # ── Correct guess ──────────────────────────────────────────────────────────
     claimers.add(user_id)
     _active_char.pop(chat_id, None)
@@ -421,12 +438,22 @@ async def guess(update: Update, context: CallbackContext) -> None:
     # Update user document
     inc_fields: dict = {"total_guesses": 1, "xp": xp_earned}
 
+    # Daily catch counter — reset if new day, else increment
+    if last_date == today_str:
+        inc_fields["daily_catch_count"] = 1
+        set_fields = {"username": u.username, "first_name": u.first_name}
+    else:
+        set_fields = {
+            "username": u.username, "first_name": u.first_name,
+            "daily_catch_date": today_str, "daily_catch_count": 1,
+        }
+
     await user_collection.update_one(
         {"id": user_id},
         {
             "$push": {"characters": char_to_push},
             "$inc":  inc_fields,
-            "$set":  {"username": u.username, "first_name": u.first_name},
+            "$set":  set_fields,
             "$setOnInsert": {"coins": 0, "wins": 0, "favorites": []},
         },
         upsert=True,

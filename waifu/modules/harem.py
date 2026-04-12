@@ -117,7 +117,7 @@ async def _build_list_view(
             g_rank = (f" 🌐<code>#{c['global_rank']}</code>"
                       if c.get("global_rank") else "")
             lines.append(
-                f"🍀 <code>{c['id']}</code> | {rar} | {escape(c['name'])}{fav}{g_rank} ×{cnt}"
+                f"🍀 <code>{c['id']}</code> | {rar} | {escape(c['name'])} [{rar}]{fav}{g_rank} (x{cnt})"
             )
         lines.append("")
 
