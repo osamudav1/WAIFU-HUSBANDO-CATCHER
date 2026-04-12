@@ -3,8 +3,9 @@ waifu/__main__.py  —  Entry point.
 Run with:  python -m waifu
 
 Mode selection (automatic):
-  - Deployed on Replit  → REPLIT_DEPLOYMENT=1 is set → webhook mode (no Conflict)
-  - Dev / local         → polling mode
+  - Koyeb       → KOYEB_APP_NAME is set → polling + health server on PORT
+  - Replit VM   → REPLIT_DEPLOYMENT=1   → webhook mode (no Conflict)
+  - Dev / local → polling mode (no health server)
 """
 import importlib
 import os
@@ -15,16 +16,17 @@ from waifu import ALL_MODULES, LOGGER
 
 
 def _run_health_server(port: int = 8080) -> None:
-    """Tiny HTTP server for Replit health checks — keeps deployment alive."""
+    """Minimal HTTP health-check server — required by Koyeb / Replit deployments."""
     class _Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b"OK")
         def log_message(self, *args):
-            pass   # silence access logs
+            pass
 
     server = HTTPServer(("0.0.0.0", port), _Handler)
+    LOGGER.info("Health-check server listening on port %d", port)
     server.serve_forever()
 
 
@@ -39,7 +41,6 @@ async def _migrate_indexes() -> None:
 
 async def _post_init(application) -> None:
     from waifu.modules.inlinequery import create_indexes
-    from waifu import GROUP_ID
     await _migrate_indexes()
     await create_indexes()
     LOGGER.info("DB indexes ensured.")
@@ -59,18 +60,36 @@ def main() -> None:
     from waifu import application
     application.post_init = _post_init
 
-    # ── Auto-detect mode ──────────────────────────────────────────────────────
+    _POLLING_KWARGS = dict(
+        drop_pending_updates=True,
+        allowed_updates=[
+            "message", "edited_message", "callback_query",
+            "inline_query", "chosen_inline_result",
+            "chat_member", "my_chat_member",
+        ],
+    )
+
+    # ── Detect platform ────────────────────────────────────────────────────────
+    is_koyeb    = bool(os.environ.get("KOYEB_APP_NAME"))
     is_deployed = os.environ.get("REPLIT_DEPLOYMENT", "0") == "1"
 
-    if is_deployed:
+    if is_koyeb:
+        # ── Koyeb: health server + polling ────────────────────────────────────
+        port = int(os.environ.get("PORT", "8080"))
+        t = threading.Thread(target=_run_health_server, args=(port,), daemon=True)
+        t.start()
+        LOGGER.info("Koyeb mode: polling + health server on port %d", port)
+        application.run_polling(**_POLLING_KWARGS)
+
+    elif is_deployed:
+        # ── Replit VM deployment ───────────────────────────────────────────────
         port    = int(os.environ.get("PORT", "8080"))
         domains = os.environ.get("REPLIT_DOMAINS", "")
         domain  = domains.split(",")[0].strip() if domains else ""
 
         if domain:
-            # Webhook mode — Telegram pushes updates; HTTP server built-in.
             webhook_url = f"https://{domain}/{os.environ.get('BOT_TOKEN', '')}"
-            LOGGER.info("Starting bot (webhook) on port %d → %s", port, f"https://{domain}/...")
+            LOGGER.info("Replit webhook on port %d → %s", port, f"https://{domain}/...")
             application.run_webhook(
                 listen="0.0.0.0",
                 port=port,
@@ -83,28 +102,15 @@ def main() -> None:
                 ],
             )
         else:
-            # No domain → polling + health-check HTTP server (keeps deployment alive).
             LOGGER.warning("REPLIT_DOMAINS empty — polling + health server on port %d", port)
             t = threading.Thread(target=_run_health_server, args=(port,), daemon=True)
             t.start()
-            application.run_polling(
-                drop_pending_updates=True,
-                allowed_updates=[
-                    "message", "edited_message", "callback_query",
-                    "inline_query", "chosen_inline_result",
-                    "chat_member", "my_chat_member",
-                ],
-            )
+            application.run_polling(**_POLLING_KWARGS)
+
     else:
+        # ── Local dev: simple polling ─────────────────────────────────────────
         LOGGER.info("Starting bot (polling)…")
-        application.run_polling(
-            drop_pending_updates=True,
-            allowed_updates=[
-                "message", "edited_message", "callback_query",
-                "inline_query", "chosen_inline_result",
-                "chat_member", "my_chat_member",
-            ],
-        )
+        application.run_polling(**_POLLING_KWARGS)
 
 
 if __name__ == "__main__":
