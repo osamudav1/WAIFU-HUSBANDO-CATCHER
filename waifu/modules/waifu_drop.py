@@ -27,8 +27,6 @@ from waifu import (
     bot_settings_collection,
     LOGGER, OWNER_ID, sudo_users,
 )
-from waifu.config import Config
-
 # ── Conversation state ────────────────────────────────────────────────────────
 _WAIT_ANNOUNCE = 0
 
@@ -39,11 +37,12 @@ _last_user:        dict[int, dict]      = {}   # chat_id → {user_id, count}
 _warned:           dict[int, float]     = {}   # user_id → timestamp of last warning
 _sent_ids:         dict[int, list]      = {}   # rolling window of sent char IDs
 _registered_chats: set[int]            = set() # all groups ever seen
-_drop_tasks:       dict[int, asyncio.Task] = {} # chat_id → asyncio drop task
+_msg_count:        dict[int, int]      = {}   # chat_id → messages since last drop
 _drop_msg:         dict[int, object]   = {}   # chat_id → sent drop Message object
 _expiry_tasks:     dict[int, asyncio.Task] = {} # chat_id → expiry countdown task
 
-_DROP_EXPIRE_SECS = 300   # 5 minutes
+_DROP_EXPIRE_SECS   = 300   # 5 minutes
+_DROP_MSG_DEFAULT   = 10    # default messages needed to trigger a drop
 
 # ── XP per correct guess (by rarity) ─────────────────────────────────────────
 _XP_MAP: dict[str, int] = {
@@ -96,14 +95,14 @@ def _split_rarity(rarity: str) -> tuple[str, str]:
     return "💎", rarity
 
 
-# ── Drop interval ─────────────────────────────────────────────────────────────
+# ── Drop message-count threshold (per group, stored in DB) ────────────────────
 
-async def _chat_drop_interval(chat_id: int) -> int:
-    """Return drop interval in minutes for this chat."""
+async def _get_drop_threshold(chat_id: int) -> int:
+    """Return how many messages trigger a drop for this chat."""
     doc = await user_totals_collection.find_one({"chat_id": chat_id})
-    if doc and "drop_interval_minutes" in doc:
-        return max(1, int(doc["drop_interval_minutes"]))
-    return Config.DROP_INTERVAL_MIN
+    if doc and "drop_msg_count" in doc:
+        return max(1, int(doc["drop_msg_count"]))
+    return _DROP_MSG_DEFAULT
 
 
 # ── Rolling window ────────────────────────────────────────────────────────────
@@ -252,78 +251,7 @@ async def _expire_drop(chat_id: int, char: dict, bot) -> None:
             pass
 
 
-# ── Pre-drop announcement ─────────────────────────────────────────────────────
-
-PRE_ANNOUNCE_SEC = 30   # seconds before drop to send the teaser
-
-async def _send_pre_announce(chat_id: int, bot) -> None:
-    """Send the configured pre-drop teaser to the group (if set)."""
-    try:
-        doc = await bot_settings_collection.find_one({"key": "drop_announce"})
-        if not doc:
-            return
-        ann_type  = doc.get("type", "text")
-        ann_value = doc.get("value", "")
-        if not ann_value:
-            return
-        if ann_type == "sticker":
-            await bot.send_sticker(chat_id, sticker=ann_value)
-        else:   # text / emoji
-            await bot.send_message(chat_id, ann_value, parse_mode=ParseMode.HTML)
-    except Exception as e:
-        LOGGER.warning("Pre-announce failed for %s: %s", chat_id, e)
-
-
-# ── Timer loop per group ──────────────────────────────────────────────────────
-
-async def _drop_loop(chat_id: int, bot) -> None:
-    """Runs forever: sleep (interval − 30 s) → pre-announce → 30 s → drop → repeat."""
-    try:
-        while True:
-            interval   = await _chat_drop_interval(chat_id)
-            total_secs = interval * 60
-            LOGGER.debug("Chat %s next drop in %d min", chat_id, interval)
-
-            if total_secs > PRE_ANNOUNCE_SEC + 10:
-                await asyncio.sleep(total_secs - PRE_ANNOUNCE_SEC)
-                await _send_pre_announce(chat_id, bot)
-                await asyncio.sleep(PRE_ANNOUNCE_SEC)
-            else:
-                await asyncio.sleep(total_secs)
-
-            await _send_drop(chat_id, bot)
-    except asyncio.CancelledError:
-        LOGGER.debug("Drop loop cancelled for chat %s", chat_id)
-    except Exception as e:
-        LOGGER.error("Drop loop error in chat %s: %s", chat_id, e)
-
-
-def _start_drop_task(chat_id: int, bot) -> None:
-    """Start the drop timer for a group (no-op if already running)."""
-    existing = _drop_tasks.get(chat_id)
-    if existing and not existing.done():
-        return   # already running — don't restart mid-cycle
-    task = asyncio.create_task(_drop_loop(chat_id, bot))
-    _drop_tasks[chat_id] = task
-    LOGGER.info("Drop timer started for chat %s", chat_id)
-
-
-def restart_drop_task(chat_id: int, bot) -> None:
-    """Cancel the current drop loop for chat_id and start a fresh one.
-
-    Call this after changing the drop interval so the new value takes
-    effect immediately instead of waiting for the old sleep to finish.
-    """
-    existing = _drop_tasks.get(chat_id)
-    if existing and not existing.done():
-        existing.cancel()
-    _registered_chats.add(chat_id)
-    task = asyncio.create_task(_drop_loop(chat_id, bot))
-    _drop_tasks[chat_id] = task
-    LOGGER.info("Drop timer restarted for chat %s (interval change)", chat_id)
-
-
-# ── Message handler (anti-spam + timer registration) ─────────────────────────
+# ── Message handler (count-based drop trigger) ────────────────────────────────
 
 async def message_counter(update: Update, context: CallbackContext) -> None:
     if not update.effective_chat or update.effective_chat.type == "private":
@@ -334,10 +262,19 @@ async def message_counter(update: Update, context: CallbackContext) -> None:
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
-    # Register chat and start drop timer on first message
-    if chat_id not in _registered_chats:
-        _registered_chats.add(chat_id)
-        _start_drop_task(chat_id, context.bot)
+    _registered_chats.add(chat_id)
+
+    # ── Count messages; drop when threshold reached ────────────────────────────
+    _msg_count[chat_id] = _msg_count.get(chat_id, 0) + 1
+    threshold = await _get_drop_threshold(chat_id)
+
+    if _msg_count[chat_id] >= threshold:
+        _msg_count[chat_id] = 0   # reset counter
+        # Only drop if no character is currently active
+        if not _active_char.get(chat_id):
+            asyncio.create_task(_send_drop(chat_id, context.bot))
+            LOGGER.info("Message threshold (%d) reached → drop for chat %s",
+                        threshold, chat_id)
 
     # Anti-spam tracking (warn only)
     last = _last_user.get(chat_id)
@@ -356,6 +293,12 @@ async def message_counter(update: Update, context: CallbackContext) -> None:
                     pass
     else:
         _last_user[chat_id] = {"user_id": user_id, "count": 1}
+
+
+def restart_drop_task(chat_id: int, bot) -> None:
+    """Reset the message counter for a group (called after threshold change)."""
+    _msg_count[chat_id] = 0
+    LOGGER.info("Message counter reset for chat %s", chat_id)
 
 
 # ── /guess ────────────────────────────────────────────────────────────────────
@@ -584,9 +527,7 @@ async def forcedrop(update: Update, context: CallbackContext) -> None:
         return
 
     chat_id = chat.id
-    if chat_id not in _registered_chats:
-        _registered_chats.add(chat_id)
-        _start_drop_task(chat_id, context.bot)
+    _registered_chats.add(chat_id)
 
     # ── Specific character drop: /forcedrop <char_id> ─────────────────────────
     if context.args:
