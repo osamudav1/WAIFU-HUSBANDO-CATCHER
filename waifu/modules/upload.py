@@ -161,8 +161,7 @@ async def step_photo(update: Update, context: CallbackContext) -> int:
     await update.message.reply_text(
         f"✅ <b>Step 2/4 — Character Name</b>  ({src})\n\n"
         "Character အမည် ရိုက်ပေး\n"
-        "<i>Space ပါရင် dash (-) သုံး\n"
-        "ဥပမာ: Monkey-D-Luffy</i>\n\n"
+        "<i>ဥပမာ: Monkey D Luffy</i>\n\n"
         "❌ ပယ်ဖျက်ရန် /cancel",
         parse_mode=ParseMode.HTML,
     )
@@ -182,7 +181,7 @@ async def step_name(update: Update, context: CallbackContext) -> int:
         f"✅ <b>Step 3/4 — Anime Name</b>\n\n"
         f"Name: <b>{name}</b>\n\n"
         f"Anime အမည် ရိုက်ပေး\n"
-        f"<i>ဥပမာ: One-Piece</i>\n\n"
+        f"<i>ဥပမာ: One Piece</i>\n\n"
         f"❌ ပယ်ဖျက်ရန် /cancel",
         parse_mode=ParseMode.HTML,
     )
