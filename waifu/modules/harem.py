@@ -29,6 +29,7 @@ _MEDALS = {
     "🟤 Medium":            "🟤",
     "🟡 Legendary":         "🟡",
     "🔮 Mythical":          "🔮",
+    "🪞 Supreme":           "🪞",
     "💮 Special Edition":   "💮",
     "🌐 Global":            "🌐",
     "🌌 Universal Limited": "🌌",

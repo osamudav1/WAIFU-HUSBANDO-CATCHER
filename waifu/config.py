@@ -46,6 +46,7 @@ class Config:
         3: "🟤 Medium",
         4: "🟡 Legendary",
         5: "🔮 Mythical",
+        9: "🪞 Supreme",
         6: "💮 Special Edition",
         7: "🌐 Global",
         8: "🌌 Universal Limited",

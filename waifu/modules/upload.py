@@ -97,6 +97,9 @@ def _rarity_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🔮 Mythical",          callback_data="rar:5"),
         ],
         [
+            InlineKeyboardButton("🪞 Supreme",           callback_data="rar:9"),
+        ],
+        [
             InlineKeyboardButton("💮 Special Edition",   callback_data="rar:6"),
             InlineKeyboardButton("🌐 Global",            callback_data="rar:7"),
         ],
