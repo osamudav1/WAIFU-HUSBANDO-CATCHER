@@ -460,7 +460,13 @@ async def guess(update: Update, context: CallbackContext) -> None:
             {"id": user_id},
             {"$inc": {"coins": _LEVEL_UP_COINS}},
         )
-        for gid in list(registered_chats):
+        group_docs = await top_global_groups_collection.find(
+            {}, {"group_id": 1}
+        ).to_list(length=500)
+        for doc in group_docs:
+            gid = doc.get("group_id")
+            if not gid:
+                continue
             try:
                 await context.bot.send_message(
                     gid, lv_text, parse_mode=ParseMode.HTML

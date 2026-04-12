@@ -29,7 +29,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
-from waifu import application, user_collection, registered_chats, LOGGER
+from waifu import application, user_collection, top_global_groups_collection, LOGGER
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -433,7 +433,6 @@ async def _do_evolve(query, user_id: int, cid: str, target_stars: int, back_page
         mention   = f'<a href="tg://user?id={user_id}">{fn}</a>'
 
         if rarity == UL_RARITY:
-            # Give God Of Waifu badge
             await user_collection.update_one(
                 {"id": user_id},
                 {"$addToSet": {"badges": GOD_BADGE}},
@@ -451,7 +450,17 @@ async def _do_evolve(query, user_id: int, cid: str, target_stars: int, back_page
                 f"<b>{rarity}</b> character!"
             )
 
-        for gid in list(registered_chats):
+        # Fetch all known group IDs from DB (persists across restarts)
+        group_docs = await top_global_groups_collection.find(
+            {}, {"group_id": 1}
+        ).to_list(length=500)
+        group_ids = [d["group_id"] for d in group_docs if "group_id" in d]
+
+        sent = set()
+        for gid in group_ids:
+            if gid in sent:
+                continue
+            sent.add(gid)
             try:
                 await query.bot.send_message(gid, ann_text, parse_mode=ParseMode.HTML)
             except Exception as e:
@@ -468,23 +477,25 @@ async def _evo_callback(update: Update, context: CallbackContext) -> None:
     user_id = q.from_user.id
     data    = q.data
 
-    await q.answer()
-
     parts = data.split(":")
 
     if parts[1] == "noop":
+        await q.answer()
         return
 
     elif parts[1] == "list":
+        await q.answer()
         page = int(parts[2])
         await _show_list(q.edit_message_text, user_id, page=page)
 
     elif parts[1] == "view":
+        await q.answer()
         cid       = parts[2]
         back_page = int(parts[3])
         await _show_view(q, user_id, cid, back_page)
 
     elif parts[1] == "do":
+        # _do_evolve handles q.answer() itself (with show_alert=True)
         cid          = parts[2]
         target_stars = int(parts[3])
         back_page    = int(parts[4])
