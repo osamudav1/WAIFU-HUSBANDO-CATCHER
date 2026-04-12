@@ -88,6 +88,8 @@ def _list_all_modules() -> list[str]:
 ALL_MODULES = _list_all_modules()
 LOGGER.info("Modules queued: %s", ALL_MODULES)
 
+registered_chats: set[int] = set()   # all group IDs ever seen (shared across modules)
+
 __all__ = [
     "ALL_MODULES", "application", "db", "LOGGER", "StartTime",
     "OWNER_ID", "sudo_users", "DEV_LIST", "TOKEN", "BOT_USERNAME",
@@ -96,4 +98,5 @@ __all__ = [
     "group_user_totals_collection", "top_global_groups_collection",
     "pm_users", "market_collection", "active_drops_collection",
     "bot_settings_collection", "waifu_collection",
+    "registered_chats",
 ]

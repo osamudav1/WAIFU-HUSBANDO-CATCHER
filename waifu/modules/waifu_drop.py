@@ -24,7 +24,7 @@ from telegram.ext import (
 from waifu import (
     application, collection, group_user_totals_collection,
     top_global_groups_collection, user_collection, user_totals_collection,
-    bot_settings_collection,
+    bot_settings_collection, registered_chats,
     LOGGER, OWNER_ID, sudo_users,
 )
 # ── Conversation state ────────────────────────────────────────────────────────
@@ -36,7 +36,6 @@ _claimers:         dict[int, set]       = {}   # chat_id → set of user_ids who
 _last_user:        dict[int, dict]      = {}   # chat_id → {user_id, count}
 _warned:           dict[int, float]     = {}   # user_id → timestamp of last warning
 _sent_ids:         dict[int, list]      = {}   # rolling window of sent char IDs
-_registered_chats: set[int]            = set() # all groups ever seen
 _msg_count:        dict[int, int]      = {}   # chat_id → messages since last drop
 _drop_msg:         dict[int, object]   = {}   # chat_id → sent drop Message object
 _expiry_tasks:     dict[int, asyncio.Task] = {} # chat_id → expiry countdown task
@@ -70,6 +69,17 @@ _DROP_WEIGHT: dict[str, int] = {
     "🌌 Universal Limited":  5,
 }
 _WEIGHT_DEFAULT = 1    # fallback weight for unknown rarity
+
+# ── Premium rarity rules ──────────────────────────────────────────────────────
+_PREMIUM_RARITIES = {"🌐 Global", "💮 Special Edition", "🌌 Universal Limited"}
+_PREMIUM_MAX_COPIES = 2   # max copies a user may hold for premium rarities
+
+# Wanted Coins granted on first catch (no star) — premium rarities only
+_CATCH_WC: dict[str, int] = {
+    "🌐 Global":            600,
+    "💮 Special Edition":  1_000,
+    "🌌 Universal Limited": 3_000,
+}
 
 _DEFAULT_LIMIT = 10    # fallback global limit if character has no limit field
 
@@ -266,7 +276,7 @@ async def message_counter(update: Update, context: CallbackContext) -> None:
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
-    _registered_chats.add(chat_id)
+    registered_chats.add(chat_id)
 
     # ── Count messages; drop when threshold reached ────────────────────────────
     _msg_count[chat_id] = _msg_count.get(chat_id, 0) + 1
@@ -380,6 +390,21 @@ async def guess(update: Update, context: CallbackContext) -> None:
     old_xp    = (old_doc or {}).get("xp", 0)
     old_level = _calc_level(old_xp)[0]
 
+    # ── Premium rarity: max 2 copies per user ─────────────────────────────────
+    char_rarity = char.get("rarity", "")
+    if char_rarity in _PREMIUM_RARITIES:
+        existing = sum(
+            1 for c in (old_doc or {}).get("characters", [])
+            if c.get("id") == char.get("id")
+        )
+        if existing >= _PREMIUM_MAX_COPIES:
+            await update.message.reply_text(
+                f"❌ မင်းမှာ <b>{escape(char['name'])}</b> ကဒ် {_PREMIUM_MAX_COPIES} ကဒ်ရှိပြီး!\n"
+                f"Premium card တွေ user တစ်ယောက် {_PREMIUM_MAX_COPIES} ကဒ်ထက်မပိုရ.",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
     # Update global claimed count
     char_global_limit = char.get("limit", _DEFAULT_LIMIT)
     char_prev_claimed = char.get("claimed_count", 0)
@@ -398,14 +423,22 @@ async def guess(update: Update, context: CallbackContext) -> None:
         global_rank_str  = f"{global_rank_num:03d}"  # zero-padded: "001"
         char_to_push["global_rank"] = global_rank_str
 
+    # Wanted Coins for premium rarities
+    wc_earned = _CATCH_WC.get(char_rarity, 0)
+
     # Update user document
+    inc_fields: dict = {"total_guesses": 1, "xp": xp_earned}
+    if wc_earned:
+        inc_fields["wanted_coins"] = wc_earned
+
     await user_collection.update_one(
         {"id": user_id},
         {
             "$push": {"characters": char_to_push},
-            "$inc":  {"total_guesses": 1, "xp": xp_earned},
+            "$inc":  inc_fields,
             "$set":  {"username": u.username, "first_name": u.first_name},
-            "$setOnInsert": {"coins": 0, "wins": 0, "favorites": []},
+            "$setOnInsert": {"coins": 0, "wins": 0, "favorites": [],
+                             "wanted_coins": 0, "black_material": 0, "badges": []},
         },
         upsert=True,
     )
@@ -440,7 +473,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
             {"id": user_id},
             {"$inc": {"coins": _LEVEL_UP_COINS}},
         )
-        for gid in list(_registered_chats):
+        for gid in list(registered_chats):
             try:
                 await context.bot.send_message(
                     gid, lv_text, parse_mode=ParseMode.HTML
@@ -473,6 +506,11 @@ async def guess(update: Update, context: CallbackContext) -> None:
         )],
     ])
 
+    wc_line = (
+        f"💰 <b>+{wc_earned:,} Wanted Coins</b> obtained!\n"
+        if wc_earned else ""
+    )
+
     caption = (
         f'🪷 <a href="tg://user?id={user_id}">{escape(u.first_name)}</a>'
         f', ʏᴏᴜ ɢᴏᴛ ᴀ ɴᴇᴡ ᴄʜᴀʀᴀᴄᴛᴇʀ!\n\n'
@@ -481,6 +519,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
         f'{global_rank_line}'
         f'🏖️ Aɴɪᴍᴇ: {escape(char["anime"])} '
         f'(<b>{char_new_claimed}/{char_global_limit}</b>)\n\n'
+        f'{wc_line}'
         f'Added to your harem! +{xp_earned} XP ✨'
         f'{sold_out_line}'
     )
@@ -555,7 +594,7 @@ async def forcedrop(update: Update, context: CallbackContext) -> None:
         return
 
     chat_id = chat.id
-    _registered_chats.add(chat_id)
+    registered_chats.add(chat_id)
 
     # ── Specific character drop: /forcedrop <char_id> ─────────────────────────
     if context.args:
