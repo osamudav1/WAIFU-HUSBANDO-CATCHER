@@ -6,7 +6,8 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import CallbackContext, CommandHandler
 
-from waifu import (application, group_user_totals_collection, OWNER_ID,
+from waifu import (application, collection as waifu_collection,
+                   group_user_totals_collection, OWNER_ID,
                    PHOTO_URL, top_global_groups_collection, user_collection)
 from waifu import sudo_users as SUDO
 
@@ -115,9 +116,65 @@ async def send_groups_doc(update: Update, context: CallbackContext) -> None:
     await context.bot.send_document(update.effective_chat.id, buf)
 
 
+_RANK_MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+
+async def ranking(update: Update, context: CallbackContext) -> None:
+    """
+    /ranking — top 10 collectors globally.
+    Photo = #1 user's last caught character image.
+    """
+    cursor = user_collection.aggregate([
+        {"$project": {
+            "username": 1, "first_name": 1, "id": 1,
+            "characters": 1,
+            "character_count": {"$size": {"$ifNull": ["$characters", []]}},
+        }},
+        {"$sort": {"character_count": -1}},
+        {"$limit": 10},
+    ])
+    data = await cursor.to_list(10)
+    if not data:
+        await update.message.reply_text("No collectors yet!")
+        return
+
+    lines = ["<b>🏆 Character Collection Ranking</b>\n"]
+    for i, u in enumerate(data):
+        lnk = _link(u.get("first_name") or "?", u.get("username"), u.get("id", 0))
+        cnt = u.get("character_count", 0)
+        lines.append(f"{_RANK_MEDALS[i]} {lnk} — <b>{cnt}</b> characters")
+
+    # #1 user's last caught character image
+    top_user   = data[0]
+    chars      = top_user.get("characters") or []
+    photo_url  = None
+
+    if chars:
+        last_char_id = chars[-1].get("id")
+        if last_char_id:
+            char_doc = await waifu_collection.find_one({"id": last_char_id})
+            if char_doc:
+                photo_url = char_doc.get("img_url")
+
+    caption = "\n".join(lines)
+    if photo_url:
+        try:
+            await update.message.reply_photo(
+                photo=photo_url,
+                caption=caption,
+                parse_mode=ParseMode.HTML,
+            )
+            return
+        except Exception:
+            pass
+
+    await update.message.reply_text(caption, parse_mode=ParseMode.HTML)
+
+
 application.add_handler(CommandHandler("top",       leaderboard,       block=False))
 application.add_handler(CommandHandler("ctop",      ctop,              block=False))
 application.add_handler(CommandHandler("TopGroups", global_leaderboard, block=False))
 application.add_handler(CommandHandler("stats",     stats,             block=False))
+application.add_handler(CommandHandler("ranking",   ranking,           block=False))
 application.add_handler(CommandHandler("list",      send_users_doc,    block=False))
 application.add_handler(CommandHandler("groups",    send_groups_doc,   block=False))
