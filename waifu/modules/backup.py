@@ -49,12 +49,28 @@ async def _dump_collection(col) -> list:
     return docs
 
 
-# ── /backup ────────────────────────────────────────────────────────────────────
+# ── /backup — menu ─────────────────────────────────────────────────────────────
 
 async def backup_cmd(update: Update, context: CallbackContext) -> None:
     if not _is_owner_pm(update):
         return
 
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📦 Backup",  callback_data="backup:do"),
+            InlineKeyboardButton("📥 Restore", callback_data="backup:restore_prompt"),
+        ]
+    ])
+    await update.message.reply_text(
+        "🗄️ <b>Backup / Restore</b>\n\n"
+        "📦 <b>Backup</b> — Bot data အကုန် JSON file ထုတ်ပြီး PM ပို့မည်\n"
+        "📥 <b>Restore</b> — JSON file ပို့ပြီး data ပြန်ထည့်မည်",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb,
+    )
+
+
+async def _do_backup(update: Update, context: CallbackContext) -> None:
     msg = await update.message.reply_text("⏳ Backup လုပ်နေတယ်... ခဏစောင့်ပေး")
 
     try:
@@ -94,6 +110,62 @@ async def backup_cmd(update: Update, context: CallbackContext) -> None:
 
     except Exception as e:
         await msg.edit_text(f"❌ Backup မအောင်မြင်ဘူး: {e}")
+
+
+# ── backup menu callbacks ───────────────────────────────────────────────────────
+
+async def backup_menu_callback(update: Update, context: CallbackContext) -> None:
+    q   = update.callback_query
+    uid = q.from_user.id
+    await q.answer()
+
+    if uid != OWNER_ID:
+        return
+
+    if q.data == "backup:do":
+        await q.edit_message_text("⏳ Backup လုပ်နေတယ်... ခဏစောင့်ပေး")
+        try:
+            data = {
+                "version":    "2.0",
+                "timestamp":  datetime.now(timezone.utc).isoformat(),
+                "characters": await _dump_collection(collection),
+                "users":      await _dump_collection(user_collection),
+                "chat_settings":       await _dump_collection(user_totals_collection),
+                "group_user_totals":   await _dump_collection(group_user_totals_collection),
+                "top_groups":          await _dump_collection(top_global_groups_collection),
+                "pm_users":            await _dump_collection(pm_users),
+            }
+            total_chars = len(data["characters"])
+            total_users = len(data["users"])
+            raw   = json.dumps(data, ensure_ascii=False, indent=2, default=_serialize)
+            buf   = io.BytesIO(raw.encode("utf-8"))
+            now   = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            fname = f"waifu_backup_{now}.json"
+            buf.name = fname
+            await q.message.delete()
+            await context.bot.send_document(
+                chat_id=uid,
+                document=buf,
+                filename=fname,
+                caption=(
+                    f"✅ <b>Backup ပြီးပြီ!</b>\n\n"
+                    f"🌸 Characters : <b>{total_chars}</b>\n"
+                    f"👤 Users      : <b>{total_users}</b>\n"
+                    f"🕒 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
+                    f"<i>Restore လုပ်ဖို့ ဒီ file ကို /restore နှိပ်ပြီး attach လုပ်ပေး</i>"
+                ),
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception as e:
+            await q.edit_message_text(f"❌ Backup မအောင်မြင်ဘူး: {e}")
+
+    elif q.data == "backup:restore_prompt":
+        await q.edit_message_text(
+            "📥 <b>Restore</b>\n\n"
+            "Backup JSON file ကို attach လုပ်ပြီး <b>/restore</b> command ရိုက်ပေး\n\n"
+            "<i>(သို့မဟုတ်) JSON file message ကို /restore ဖြင့် reply လုပ်ပေး</i>",
+            parse_mode=ParseMode.HTML,
+        )
 
 
 # ── /restore ───────────────────────────────────────────────────────────────────
@@ -213,4 +285,5 @@ async def restore_callback(update: Update, context: CallbackContext) -> None:
 
 application.add_handler(CommandHandler("backup",  backup_cmd,  block=False))
 application.add_handler(CommandHandler("restore", restore_cmd, block=False))
-application.add_handler(CallbackQueryHandler(restore_callback, pattern=r"^restore:(confirm|cancel)$", block=False))
+application.add_handler(CallbackQueryHandler(backup_menu_callback, pattern=r"^backup:(do|restore_prompt)$",   block=False))
+application.add_handler(CallbackQueryHandler(restore_callback,     pattern=r"^restore:(confirm|cancel)$",    block=False))
