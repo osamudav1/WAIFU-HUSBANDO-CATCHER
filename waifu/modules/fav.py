@@ -133,7 +133,81 @@ async def fav_callback(update: Update, context: CallbackContext) -> None:
             await q.edit_message_text(done_text, parse_mode=ParseMode.HTML)
 
 
-application.add_handler(CommandHandler("fav", fav, block=False))
+async def favlist(update: Update, context: CallbackContext) -> None:
+    user   = update.effective_user
+    uid    = user.id
+    name   = escape(user.first_name)
+    mention = f'<a href="tg://user?id={uid}">{name}</a>'
+
+    u_doc = await user_collection.find_one({"id": uid})
+    favs  = (u_doc or {}).get("favorites", [])
+
+    if not favs:
+        await update.message.reply_text(
+            f"{mention} ရဲ့ Favorite list မှာ character မရှိသေးဘူး!\n"
+            "/fav &lt;char_id&gt; နဲ့ ထည့်ပေး",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    # Fetch all fav chars from DB
+    char_docs: dict = {}
+    async for doc in waifu_collection.find({"id": {"$in": favs}}):
+        char_docs[doc["id"]] = doc
+
+    lines: list[str] = []
+    first_photo = None
+    for i, cid in enumerate(favs):
+        doc = char_docs.get(cid)
+        if not doc:
+            continue
+        cname  = escape(doc.get("name",  "Unknown"))
+        anime  = escape(doc.get("anime", "Unknown"))
+        rar    = doc.get("rarity", "")
+        icon   = rar.split(" ", 1)[0] if rar else "🎴"
+        star   = "⭐ " if i == 0 else f"{i + 1}. "
+        lines.append(f"{star}<b>{cname}</b> [{icon}] — {anime}")
+
+        if first_photo is None:
+            img = doc.get("img_url", "")
+            if img and not img.startswith("http") and doc.get("media_type", "photo") != "video":
+                first_photo = img
+
+    body = "\n".join(lines) if lines else "— empty —"
+    caption = (
+        f"{mention}\n"
+        f"This Is Your 👘 <b>Favorite Character List</b> 👘\n\n"
+        f"<blockquote>{body}</blockquote>"
+    )
+
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "👘 Favorite Lists 👘",
+            switch_inline_query_current_chat=f"fav.{uid}",
+        )
+    ]])
+
+    if first_photo:
+        try:
+            await update.message.reply_photo(
+                photo=first_photo,
+                caption=caption,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+            )
+            return
+        except Exception:
+            pass
+
+    await update.message.reply_text(
+        caption,
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb,
+    )
+
+
+application.add_handler(CommandHandler("fav",     fav,     block=False))
+application.add_handler(CommandHandler("favlist", favlist, block=False))
 application.add_handler(
     CallbackQueryHandler(fav_callback, pattern=r"^fav:", block=False)
 )
