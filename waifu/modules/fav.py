@@ -175,8 +175,8 @@ async def favlist(update: Update, context: CallbackContext) -> None:
 
     body = "\n".join(lines) if lines else "— empty —"
     caption = (
-        f"{mention}\n"
-        f"This Is Your 👘 <b>Favorite Character List</b> 👘\n\n"
+        f"[ {mention} ]This Is Your\n"
+        f"👘 <b>Favorite Character List</b> 👘\n\n"
         f"<blockquote>{body}</blockquote>"
     )
 
