@@ -54,7 +54,8 @@ _XP_MAP: dict[str, int] = {
     "🪞 Supreme":          180,
     "💮 Special Edition":  250,
     "🌐 Global":           400,
-    "🌌 Universal":         1000,
+    "✖️ CrossVerse":        600,
+    "🌌 Universal":        1000,
 }
 _XP_DEFAULT    = 15    # fallback if rarity string unrecognised
 
@@ -69,12 +70,13 @@ _DROP_WEIGHT: dict[str, int] = {
     "🪞 Supreme":           22,
     "💮 Special Edition":   18,
     "🌐 Global":            10,
+    "✖️ CrossVerse":         7,
     "🌌 Universal":           5,
 }
 _WEIGHT_DEFAULT = 1    # fallback weight for unknown rarity
 
 # ── Premium rarity rules ──────────────────────────────────────────────────────
-_PREMIUM_RARITIES = {"🌐 Global", "💮 Special Edition", "🌌 Universal", "🪞 Supreme"}
+_PREMIUM_RARITIES = {"🌐 Global", "✖️ CrossVerse", "💮 Special Edition", "🌌 Universal", "🪞 Supreme"}
 
 
 _DEFAULT_LIMIT = 10    # fallback global limit if character has no limit field

@@ -49,6 +49,7 @@ class Config:
         9: "🪞 Supreme",
         6: "💮 Special Edition",
         7: "🌐 Global",
+        10: "✖️ CrossVerse",
         8: "🌌 Universal",
     }
 

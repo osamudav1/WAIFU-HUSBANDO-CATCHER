@@ -25,19 +25,21 @@ _MEDALS = {
     "🪞 Supreme":           "🪞",
     "💮 Special Edition":   "💮",
     "🌐 Global":            "🌐",
+    "✖️ CrossVerse":        "✖️",
     "🌌 Universal":         "🌌",
 }
 
 _RARITY_ORDER = {
-    "🌌 Universal":         9,
-    "🌐 Global":            8,
-    "💮 Special Edition":   7,
-    "🪞 Supreme":           6,
-    "🔮 Mythical":          5,
-    "🟡 Legendary":         4,
-    "🟤 Medium":            3,
-    "🟣 Rare":              2,
-    "⚪ Common":            1,
+    "🌌 Universal":         10,
+    "✖️ CrossVerse":         9,
+    "🌐 Global":             8,
+    "💮 Special Edition":    7,
+    "🪞 Supreme":            6,
+    "🔮 Mythical":           5,
+    "🟡 Legendary":          4,
+    "🟤 Medium":             3,
+    "🟣 Rare":               2,
+    "⚪ Common":             1,
 }
 
 
