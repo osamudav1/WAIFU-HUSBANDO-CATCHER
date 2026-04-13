@@ -82,7 +82,7 @@ async def _next_id() -> str:
         upsert=True,
         return_document=ReturnDocument.AFTER,
     )
-    return str(doc["sequence_value"]).zfill(4)
+    return str(doc["sequence_value"])
 
 
 def _rarity_keyboard() -> InlineKeyboardMarkup:
