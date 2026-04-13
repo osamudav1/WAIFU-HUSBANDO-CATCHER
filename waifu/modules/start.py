@@ -541,12 +541,124 @@ async def removewelcomephoto(update: Update, context: CallbackContext) -> None:
     )
 
 
+# ── /help — Help Center ───────────────────────────────────────────────────────
+
+_HC_SECTIONS: dict[str, dict] = {
+    "catch": {
+        "text": (
+            "🎮 <b>Character ဖမ်းနည်း</b>\n\n"
+            "<code>/guess [name]</code> — Claim the active character\n"
+            "<code>/harem</code>       — Your collection (paginated)\n"
+            "<code>/fav [id]</code>    — Set favourite character\n"
+            "<code>/profile</code>     — Your stats & level"
+        ),
+        "nav": [("💰 Eco", "economy"), ("⚔️ Social", "social")],
+    },
+    "economy": {
+        "text": (
+            "💰 <b>Economy Commands</b>\n\n"
+            "<code>/daily</code>              — Claim daily coins\n"
+            "<code>/balance</code>            — Check your coins\n"
+            "<code>/market</code>             — Browse listings\n"
+            "<code>/sell [id] [price]</code>  — List a character\n"
+            "<code>/buy [listing_id]</code>   — Buy from market\n"
+            "<code>/delist [listing_id]</code>— Remove your listing"
+        ),
+        "nav": [("🎮 Catch", "catch"), ("⚔️ Social", "social")],
+    },
+    "social": {
+        "text": (
+            "⚔️ <b>Social Commands</b>\n\n"
+            "<code>/trade [char_id] [their_char_id]</code> — Trade (reply to user)\n"
+            "<code>/gift [char_id]</code>                  — Gift a character (reply to user)\n"
+            "<code>/duel</code>                            — Challenge to a duel (reply to user)"
+        ),
+        "nav": [("💰 Eco", "economy"), ("📊 LBoard", "leaderboard")],
+    },
+    "leaderboard": {
+        "text": (
+            "📊 <b>Leaderboard Commands</b>\n\n"
+            "<code>/top</code>       — Top collectors\n"
+            "<code>/ctop</code>      — This group's top\n"
+            "<code>/TopGroups</code> — Most active groups\n"
+            "<code>/stats</code>     — Global stats"
+        ),
+        "nav": [("⚔️ Social", "social"), ("🎮 Catch", "catch")],
+    },
+}
+
+
+def _hc_kb(section: str) -> InlineKeyboardMarkup:
+    nav = _HC_SECTIONS[section]["nav"]
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(label, callback_data=f"hc:{key}") for label, key in nav],
+        [InlineKeyboardButton("📥 Get Out 📥", callback_data="hc:close")],
+    ])
+
+
+async def help_cmd(update: Update, context: CallbackContext) -> None:
+    photo   = await _next_photo()
+    bot_me  = await context.bot.get_me()
+    bot_tag = f'<a href="tg://user?id={bot_me.id}">@{bot_me.username}</a>'
+    caption = (
+        f"ʜɪ ɪ ᴀᴍ {bot_tag}\n"
+        f"<blockquote>Waifu help Center Below👇🏻</blockquote>"
+    )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("👮🏻‍♂️ Help Center 👮🏻‍♂️", callback_data="hc:catch")]
+    ])
+    if photo:
+        await update.message.reply_photo(
+            photo=photo, caption=caption,
+            parse_mode=ParseMode.HTML, reply_markup=kb,
+        )
+    else:
+        await update.message.reply_text(
+            caption, parse_mode=ParseMode.HTML, reply_markup=kb,
+        )
+
+
+async def helpcenter_callback(update: Update, context: CallbackContext) -> None:
+    q = update.callback_query
+    await q.answer()
+    page = q.data[3:]   # strip "hc:"
+
+    if page == "close":
+        try:
+            await q.message.delete()
+        except Exception:
+            pass
+        return
+
+    sec = _HC_SECTIONS.get(page)
+    if not sec:
+        return
+
+    try:
+        await q.edit_message_caption(
+            caption=sec["text"],
+            parse_mode=ParseMode.HTML,
+            reply_markup=_hc_kb(page),
+        )
+    except Exception:
+        try:
+            await q.edit_message_text(
+                sec["text"],
+                parse_mode=ParseMode.HTML,
+                reply_markup=_hc_kb(page),
+            )
+        except Exception:
+            pass
+
+
 # ── Register handlers ─────────────────────────────────────────────────────────
 
 application.add_handler(CommandHandler("start",                start,               block=False))
+application.add_handler(CommandHandler("help",                 help_cmd,            block=False))
 application.add_handler(CommandHandler("addwelcomephoto",      addwelcomephoto,     block=False))
 application.add_handler(CommandHandler("welcomephotos",        listwelcomephotos,   block=False))
 application.add_handler(CommandHandler("removewelcomephoto",   removewelcomephoto,  block=False))
+application.add_handler(CallbackQueryHandler(helpcenter_callback, pattern=r"^hc:",   block=False))
 application.add_handler(CallbackQueryHandler(button,          pattern=r"^help:",   block=False))
 application.add_handler(CallbackQueryHandler(action_callback, pattern=r"^act:",    block=False))
 application.add_handler(CallbackQueryHandler(owner_callback,  pattern=r"^owner:",  block=False))
