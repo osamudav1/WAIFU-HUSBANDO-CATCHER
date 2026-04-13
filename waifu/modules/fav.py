@@ -180,30 +180,18 @@ async def favlist(update: Update, context: CallbackContext) -> None:
         f"<blockquote>{body}</blockquote>"
     )
 
-    kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton(
-            "👘 Favorite Lists 👘",
-            switch_inline_query_current_chat=f"fav.{uid}",
-        )
-    ]])
-
     if first_photo:
         try:
             await update.message.reply_photo(
                 photo=first_photo,
                 caption=caption,
                 parse_mode=ParseMode.HTML,
-                reply_markup=kb,
             )
             return
         except Exception:
             pass
 
-    await update.message.reply_text(
-        caption,
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb,
-    )
+    await update.message.reply_text(caption, parse_mode=ParseMode.HTML)
 
 
 application.add_handler(CommandHandler("fav",     fav,     block=False))
