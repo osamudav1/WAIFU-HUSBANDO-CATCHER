@@ -375,21 +375,34 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
                 LOGGER.warning("CHARA_CHANNEL notify failed: %s", ch_err)
 
         # ── Notify GROUP ───────────────────────────────────────────────────────
-        if GROUP_ID and str(GROUP_ID) != str(store_chat):
-            try:
-                if media_type == "video":
-                    await bot_local.send_video(
-                        chat_id=GROUP_ID, video=img_url,
-                        caption=chan_cap, parse_mode=ParseMode.HTML,
-                    )
-                else:
-                    await bot_local.send_photo(
-                        chat_id=GROUP_ID, photo=img_url,
-                        caption=chan_cap, parse_mode=ParseMode.HTML,
-                    )
-            except Exception as grp_err:
-                from waifu import LOGGER
-                LOGGER.warning("GROUP notify failed: %s", grp_err)
+        if GROUP_ID:
+            # Skip only if GROUP_ID is literally the same chat we already
+            # edited a caption in (store_chat) AND a stored_msg exists there,
+            # to avoid a duplicate post in that exact channel.
+            already_done = stored_msg and (str(GROUP_ID) == str(store_chat))
+            if not already_done:
+                try:
+                    if stored_msg and str(GROUP_ID) != str(store_chat):
+                        # Forward the channel post — cleanest way, reuses file
+                        await bot_local.forward_message(
+                            chat_id=GROUP_ID,
+                            from_chat_id=store_chat,
+                            message_id=stored_msg.message_id,
+                        )
+                    else:
+                        if media_type == "video":
+                            await bot_local.send_video(
+                                chat_id=GROUP_ID, video=img_url,
+                                caption=chan_cap, parse_mode=ParseMode.HTML,
+                            )
+                        else:
+                            await bot_local.send_photo(
+                                chat_id=GROUP_ID, photo=img_url,
+                                caption=chan_cap, parse_mode=ParseMode.HTML,
+                            )
+                except Exception as grp_err:
+                    from waifu import LOGGER
+                    LOGGER.warning("GROUP notify failed: %s", grp_err)
 
     except Exception as e:
         await update.message.reply_text(
