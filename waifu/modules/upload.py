@@ -375,34 +375,29 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
                 LOGGER.warning("CHARA_CHANNEL notify failed: %s", ch_err)
 
         # ── Notify GROUP ───────────────────────────────────────────────────────
-        if GROUP_ID:
-            # Skip only if GROUP_ID is literally the same chat we already
-            # edited a caption in (store_chat) AND a stored_msg exists there,
-            # to avoid a duplicate post in that exact channel.
-            already_done = stored_msg and (str(GROUP_ID) == str(store_chat))
-            if not already_done:
+        if GROUP_ID and str(GROUP_ID) != str(store_chat):
+            try:
+                if media_type == "video":
+                    await bot_local.send_video(
+                        chat_id=GROUP_ID, video=img_url,
+                        caption=chan_cap, parse_mode=ParseMode.HTML,
+                    )
+                else:
+                    await bot_local.send_photo(
+                        chat_id=GROUP_ID, photo=img_url,
+                        caption=chan_cap, parse_mode=ParseMode.HTML,
+                    )
+            except Exception as grp_err:
+                from waifu import LOGGER
+                LOGGER.warning("GROUP notify failed (chat=%s): %s", GROUP_ID, grp_err)
+                # Also notify uploader so they know
                 try:
-                    if stored_msg and str(GROUP_ID) != str(store_chat):
-                        # Forward the channel post — cleanest way, reuses file
-                        await bot_local.forward_message(
-                            chat_id=GROUP_ID,
-                            from_chat_id=store_chat,
-                            message_id=stored_msg.message_id,
-                        )
-                    else:
-                        if media_type == "video":
-                            await bot_local.send_video(
-                                chat_id=GROUP_ID, video=img_url,
-                                caption=chan_cap, parse_mode=ParseMode.HTML,
-                            )
-                        else:
-                            await bot_local.send_photo(
-                                chat_id=GROUP_ID, photo=img_url,
-                                caption=chan_cap, parse_mode=ParseMode.HTML,
-                            )
-                except Exception as grp_err:
-                    from waifu import LOGGER
-                    LOGGER.warning("GROUP notify failed: %s", grp_err)
+                    await update.message.reply_text(
+                        f"⚠️ Group notification မပို့နိုင်ဘူး: <code>{grp_err}</code>",
+                        parse_mode=ParseMode.HTML,
+                    )
+                except Exception:
+                    pass
 
     except Exception as e:
         await update.message.reply_text(
@@ -813,6 +808,29 @@ _upload_conv = ConversationHandler(
     per_message=False,
 )
 
+async def gptest(update: Update, context: CallbackContext) -> None:
+    """Owner only. /gptest — send a test message to GROUP_ID to verify it works."""
+    if update.effective_user.id != OWNER_ID:
+        return
+    bot_local = update.get_bot()
+    if not GROUP_ID:
+        await update.message.reply_text("❌ GROUP_ID မသတ်မှတ်ရသေး။")
+        return
+    await update.message.reply_text(f"🔍 GROUP_ID = <code>{GROUP_ID}</code> ကို test ပို့မည်…", parse_mode=ParseMode.HTML)
+    try:
+        await bot_local.send_message(
+            chat_id=GROUP_ID,
+            text="✅ Group notification test — bot ချိတ်ဆက်မှု အောင်မြင်တယ်!",
+        )
+        await update.message.reply_text("✅ Group ထဲ message ရောက်ပြီ!")
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Error: <code>{e}</code>\n\n"
+            f"Bot ကို group ထဲ admin အဖြစ် ထည့်ပြီး ထပ်ကြိုးစားပေး။",
+            parse_mode=ParseMode.HTML,
+        )
+
+
 application.add_handler(_upload_conv)
 application.add_handler(CommandHandler("uploadchar",      uploadchar,      block=False))
 application.add_handler(CommandHandler("delete",          delete,          block=False))
@@ -820,3 +838,4 @@ application.add_handler(CommandHandler("update",          update_char,     block
 application.add_handler(CommandHandler("migrateimgs",     migrate_imgs,    block=False))
 application.add_handler(CommandHandler("charactervdadd",  charactervdadd,  block=False))
 application.add_handler(CommandHandler("deletevd",        deletevd,        block=False))
+application.add_handler(CommandHandler("gptest",          gptest,          block=False))
