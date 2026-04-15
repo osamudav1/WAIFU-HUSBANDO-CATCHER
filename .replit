@@ -32,3 +32,14 @@ outputType = "console"
 deploymentTarget = "vm"
 run = ["python", "-m", "waifu"]
 ignorePorts = true
+
+[userenv]
+
+[userenv.shared]
+BOT_USERNAME = "OtakuFlix_post_bot"
+DB_NAME = "waifu_bot"
+SUPPORT_CHAT = "BotifyX_support"
+UPDATE_CHAT = "BotifyX_Pro_Botz"
+PHOTO_URLS = "https://telegra.ph/file/b925c3985f0f325e62e17.jpg,https://telegra.ph/file/4211fb191383d895dab9d.jpg"
+DROP_INTERVAL_MINUTES = "15"
+DEFAULT_MSG_FREQUENCY = "5"
