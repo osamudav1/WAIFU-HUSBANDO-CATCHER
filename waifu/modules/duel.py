@@ -15,7 +15,7 @@ import time
 from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode
+from telegram.constants import KeyboardButtonStyle, ParseMode
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
 from waifu import application, user_collection
@@ -91,6 +91,7 @@ async def duel(update: Update, context: CallbackContext) -> None:
         [InlineKeyboardButton(
             f"{c.get('rarity','🎴')} {c['name']}",
             callback_data=f"duel_pick_a:{did}:{i}",
+            style=KeyboardButtonStyle.SUCCESS,
         )]
         for i, c in enumerate(unique_a)
     ])
@@ -120,6 +121,7 @@ async def duel_pick_a(update: Update, context: CallbackContext) -> None:
         [InlineKeyboardButton(
             f"{c.get('rarity','🎴')} {c['name']}",
             callback_data=f"duel_pick_b:{did}:{i}",
+            style=KeyboardButtonStyle.SUCCESS,
         )]
         for i, c in enumerate(state["b_chars"])
     ])

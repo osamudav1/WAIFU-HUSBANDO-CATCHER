@@ -8,7 +8,7 @@ import math
 from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
-from telegram.constants import ParseMode
+from telegram.constants import KeyboardButtonStyle, ParseMode
 from telegram.error import BadRequest
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
@@ -118,18 +118,19 @@ async def _build_list_view(
     _vid = viewer_id if viewer_id else user_id
     nav  = []
     if page > 0:
-        nav.append(InlineKeyboardButton("⬅️ PREV", callback_data=f"harem:{page - 1}:{user_id}:{_vid}"))
+        nav.append(InlineKeyboardButton("⬅️ PREV", callback_data=f"harem:{page - 1}:{user_id}:{_vid}", style=KeyboardButtonStyle.PRIMARY))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("NEXT ➡️", callback_data=f"harem:{page + 1}:{user_id}:{_vid}"))
+        nav.append(InlineKeyboardButton("NEXT ➡️", callback_data=f"harem:{page + 1}:{user_id}:{_vid}", style=KeyboardButtonStyle.PRIMARY))
 
     kb_rows: list[list] = []
     if nav:
         kb_rows.append(nav)
-    kb_rows.append([InlineKeyboardButton(f"⛩ CHARACTERS ({total_chars})", callback_data="noop")])
+    kb_rows.append([InlineKeyboardButton(f"⛩ CHARACTERS ({total_chars})", callback_data="noop", style=KeyboardButtonStyle.PRIMARY)])
     kb_rows.append([
         InlineKeyboardButton(
             "🔱 Harem Collection",
             switch_inline_query_current_chat=f"harem.{user_id}",
+            style=KeyboardButtonStyle.PRIMARY,
         ),
     ])
 
@@ -293,10 +294,10 @@ async def harem_callback(update: Update, context: CallbackContext) -> None:
 async def hmode(update: Update, context: CallbackContext) -> None:
     kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🐉 Default",  callback_data="hmode:set:default"),
-            InlineKeyboardButton("Detailed 🦖", callback_data="hmode:set:detailed"),
+            InlineKeyboardButton("🐉 Default",  callback_data="hmode:set:default",  style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton("Detailed 🦖", callback_data="hmode:set:detailed", style=KeyboardButtonStyle.PRIMARY),
         ],
-        [InlineKeyboardButton("🦕 Reset Preference", callback_data="hmode:reset")],
+        [InlineKeyboardButton("🦕 Reset Preference", callback_data="hmode:reset", style=KeyboardButtonStyle.DANGER)],
     ])
     await update.message.reply_text(
         "<b>You Can Change Your Harem Interface Using These Buttons</b>",
@@ -333,10 +334,10 @@ async def hmode_callback(update: Update, context: CallbackContext) -> None:
         mode_label = "🐉 Default" if new_mode == "default" else "🦖 Detailed"
         kb = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("🎖️ Sort By Rarity", callback_data=f"hmode:sort:rarity:{new_mode}"),
-                InlineKeyboardButton("📘 Sort By Anime",   callback_data=f"hmode:sort:anime:{new_mode}"),
+                InlineKeyboardButton("🎖️ Sort By Rarity", callback_data=f"hmode:sort:rarity:{new_mode}", style=KeyboardButtonStyle.PRIMARY),
+                InlineKeyboardButton("📘 Sort By Anime",   callback_data=f"hmode:sort:anime:{new_mode}",  style=KeyboardButtonStyle.PRIMARY),
             ],
-            [InlineKeyboardButton("🗑️ Close", callback_data="hmode:close")],
+            [InlineKeyboardButton("🗑️ Close", callback_data="hmode:close", style=KeyboardButtonStyle.DANGER)],
         ])
         await q.edit_message_text(
             f"<b>Your Harem Interface Is Already Set To {mode_label}✅</b>\n\n"
@@ -354,10 +355,10 @@ async def hmode_callback(update: Update, context: CallbackContext) -> None:
     mode_label = "🐉 Default" if new_mode == "default" else "🦖 Detailed"
     kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🎖️ Sort By Rarity", callback_data=f"hmode:sort:rarity:{new_mode}"),
-            InlineKeyboardButton("📘 Sort By Anime",   callback_data=f"hmode:sort:anime:{new_mode}"),
+            InlineKeyboardButton("🎖️ Sort By Rarity", callback_data=f"hmode:sort:rarity:{new_mode}", style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton("📘 Sort By Anime",   callback_data=f"hmode:sort:anime:{new_mode}",  style=KeyboardButtonStyle.PRIMARY),
         ],
-        [InlineKeyboardButton("🗑️ Close", callback_data="hmode:close")],
+        [InlineKeyboardButton("🗑️ Close", callback_data="hmode:close", style=KeyboardButtonStyle.DANGER)],
     ])
     await q.edit_message_text(
         f"✅ <b>Harem Interface changed to {mode_label}!</b>\n\n"

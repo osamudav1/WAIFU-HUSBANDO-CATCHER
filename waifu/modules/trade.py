@@ -6,7 +6,7 @@ import time
 from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode
+from telegram.constants import KeyboardButtonStyle, ParseMode
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
 from waifu import application, user_collection
@@ -61,8 +61,8 @@ async def trade(update: Update, context: CallbackContext) -> None:
     asyncio.create_task(_expire(_trades, tid))
 
     kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton("✅ Accept", callback_data=f"trade_yes:{tid}"),
-        InlineKeyboardButton("❌ Reject", callback_data=f"trade_no:{tid}"),
+        InlineKeyboardButton("✅ Accept", callback_data=f"trade_yes:{tid}", style=KeyboardButtonStyle.SUCCESS),
+        InlineKeyboardButton("❌ Reject", callback_data=f"trade_no:{tid}", style=KeyboardButtonStyle.DANGER),
     ]])
     await update.message.reply_text(
         f"🔄 <b>Trade Proposal</b>\n\n"
@@ -136,8 +136,8 @@ async def gift(update: Update, context: CallbackContext) -> None:
     asyncio.create_task(_expire(_gifts, gid))
 
     kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton("🎁 Confirm", callback_data=f"gift_yes:{gid}"),
-        InlineKeyboardButton("❌ Cancel",  callback_data=f"gift_no:{gid}"),
+        InlineKeyboardButton("🎁 Confirm", callback_data=f"gift_yes:{gid}", style=KeyboardButtonStyle.SUCCESS),
+        InlineKeyboardButton("❌ Cancel",  callback_data=f"gift_no:{gid}",  style=KeyboardButtonStyle.DANGER),
     ]])
     await update.message.reply_text(
         f"🎁 Gift <b>{escape(char['name'])}</b> to "

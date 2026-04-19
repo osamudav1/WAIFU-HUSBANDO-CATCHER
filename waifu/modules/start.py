@@ -1,7 +1,7 @@
 from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode
+from telegram.constants import KeyboardButtonStyle, ParseMode
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from waifu import (
@@ -93,42 +93,42 @@ SECTION_LABELS = {
 def _group_kb(uid: int | None = None) -> InlineKeyboardMarkup:
     """3-button keyboard shown when /start is used inside a group."""
     waifus_btn = (
-        InlineKeyboardButton("🔱 My Waifus", switch_inline_query_current_chat=f"harem.{uid}")
+        InlineKeyboardButton("🔱 My Waifus", switch_inline_query_current_chat=f"harem.{uid}", style=KeyboardButtonStyle.PRIMARY)
         if uid else
-        InlineKeyboardButton("🔱 My Waifus", callback_data="act:harem")
+        InlineKeyboardButton("🔱 My Waifus", callback_data="act:harem", style=KeyboardButtonStyle.PRIMARY)
     )
     return InlineKeyboardMarkup([
         [waifus_btn,
-         InlineKeyboardButton("👤 Profile", callback_data="act:profile")],
-        [InlineKeyboardButton("👨‍💻 Dᴇᴠᴇʟᴏᴘᴇʀ", url=f"tg://user?id={OWNER_ID}")],
+         InlineKeyboardButton("👤 Profile", callback_data="act:profile", style=KeyboardButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("👨‍💻 Dᴇᴠᴇʟᴏᴘᴇʀ", url=f"tg://user?id={OWNER_ID}", style=KeyboardButtonStyle.PRIMARY)],
     ])
 
 
 def _main_kb(uid: int | None = None) -> InlineKeyboardMarkup:
     harem_btn = (
-        InlineKeyboardButton("🔱 My Waifus", switch_inline_query_current_chat=f"harem.{uid}")
+        InlineKeyboardButton("🔱 My Waifus", switch_inline_query_current_chat=f"harem.{uid}", style=KeyboardButtonStyle.PRIMARY)
         if uid else
-        InlineKeyboardButton("🔱 My Waifus", callback_data="act:harem")
+        InlineKeyboardButton("🔱 My Waifus", callback_data="act:harem", style=KeyboardButtonStyle.PRIMARY)
     )
     rows = [
-        [InlineKeyboardButton("➕ Add Me to Group", url=f"https://t.me/{BOT_USERNAME}?startgroup=new")],
+        [InlineKeyboardButton("➕ Add Me to Group", url=f"https://t.me/{BOT_USERNAME}?startgroup=new", style=KeyboardButtonStyle.SUCCESS)],
         [
-            InlineKeyboardButton("👥 Group", url="https://t.me/waifucharactersos"),
-            InlineKeyboardButton("📢 Updates", url="https://t.me/+py0voloZgOQ5NGU1"),
+            InlineKeyboardButton("👥 Group", url="https://t.me/waifucharactersos", style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton("📢 Updates", url="https://t.me/+py0voloZgOQ5NGU1", style=KeyboardButtonStyle.PRIMARY),
         ],
         # Quick actions
         [
             harem_btn,
-            InlineKeyboardButton("👤 Profile",  callback_data="act:profile"),
+            InlineKeyboardButton("👤 Profile",  callback_data="act:profile", style=KeyboardButtonStyle.PRIMARY),
         ],
         # Help sections
         [
-            InlineKeyboardButton("🎮 Game",    callback_data="help:game"),
-            InlineKeyboardButton("💰 Economy", callback_data="help:economy"),
+            InlineKeyboardButton("🎮 Game",    callback_data="help:game",    style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton("💰 Economy", callback_data="help:economy", style=KeyboardButtonStyle.PRIMARY),
         ],
         [
-            InlineKeyboardButton("⚔️ Social",      callback_data="help:social"),
-            InlineKeyboardButton("📊 Leaderboard", callback_data="help:leaderboard"),
+            InlineKeyboardButton("⚔️ Social",      callback_data="help:social",       style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton("📊 Leaderboard", callback_data="help:leaderboard",  style=KeyboardButtonStyle.PRIMARY),
         ],
     ]
     return InlineKeyboardMarkup(rows)
@@ -137,54 +137,54 @@ def _main_kb(uid: int | None = None) -> InlineKeyboardMarkup:
 def _owner_kb(uid: int | None = None) -> InlineKeyboardMarkup:
     """Extra panel shown ONLY to the owner in their PM."""
     harem_btn = (
-        InlineKeyboardButton("🔱 My Waifus", switch_inline_query_current_chat=f"harem.{uid}")
+        InlineKeyboardButton("🔱 My Waifus", switch_inline_query_current_chat=f"harem.{uid}", style=KeyboardButtonStyle.PRIMARY)
         if uid else
-        InlineKeyboardButton("🔱 My Waifus", callback_data="act:harem")
+        InlineKeyboardButton("🔱 My Waifus", callback_data="act:harem", style=KeyboardButtonStyle.PRIMARY)
     )
     rows = [
-        [InlineKeyboardButton("➕ Add Me to Group", url=f"https://t.me/{BOT_USERNAME}?startgroup=new")],
+        [InlineKeyboardButton("➕ Add Me to Group", url=f"https://t.me/{BOT_USERNAME}?startgroup=new", style=KeyboardButtonStyle.SUCCESS)],
         [
-            InlineKeyboardButton("👥 Group", url="https://t.me/waifucharactersos"),
-            InlineKeyboardButton("📢 Updates", url="https://t.me/+py0voloZgOQ5NGU1"),
+            InlineKeyboardButton("👥 Group", url="https://t.me/waifucharactersos", style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton("📢 Updates", url="https://t.me/+py0voloZgOQ5NGU1", style=KeyboardButtonStyle.PRIMARY),
         ],
         # Quick actions
         [
             harem_btn,
-            InlineKeyboardButton("👤 Profile",  callback_data="act:profile"),
+            InlineKeyboardButton("👤 Profile",  callback_data="act:profile", style=KeyboardButtonStyle.PRIMARY),
         ],
         [
-            InlineKeyboardButton("🎁 Daily",    callback_data="act:daily"),
-            InlineKeyboardButton("💰 Balance",  callback_data="act:balance"),
+            InlineKeyboardButton("🎁 Daily",    callback_data="act:daily",   style=KeyboardButtonStyle.SUCCESS),
+            InlineKeyboardButton("💰 Balance",  callback_data="act:balance", style=KeyboardButtonStyle.PRIMARY),
         ],
         # Help sections
         [
-            InlineKeyboardButton("🎮 Game",    callback_data="help:game"),
-            InlineKeyboardButton("💰 Economy", callback_data="help:economy"),
+            InlineKeyboardButton("🎮 Game",    callback_data="help:game",    style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton("💰 Economy", callback_data="help:economy", style=KeyboardButtonStyle.PRIMARY),
         ],
         [
-            InlineKeyboardButton("⚔️ Social",      callback_data="help:social"),
-            InlineKeyboardButton("📊 Leaderboard", callback_data="help:leaderboard"),
+            InlineKeyboardButton("⚔️ Social",      callback_data="help:social",      style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton("📊 Leaderboard", callback_data="help:leaderboard", style=KeyboardButtonStyle.PRIMARY),
         ],
         [
-            InlineKeyboardButton("⚙️ Settings", callback_data="help:settings"),
+            InlineKeyboardButton("⚙️ Settings", callback_data="help:settings", style=KeyboardButtonStyle.PRIMARY),
         ],
         # ── Owner Panel ──────────────────────────────────
         [InlineKeyboardButton("👑 ─── Owner Panel ─── 👑", callback_data="owner:noop")],
         [
-            InlineKeyboardButton("📤 Upload Char",    callback_data="owner:upload"),
-            InlineKeyboardButton("⚡ Force Drop",     callback_data="owner:forcedrop"),
+            InlineKeyboardButton("📤 Upload Char",    callback_data="owner:upload",    style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton("⚡ Force Drop",     callback_data="owner:forcedrop", style=KeyboardButtonStyle.PRIMARY),
         ],
         [
-            InlineKeyboardButton("📢 Broadcast",      callback_data="owner:broadcast"),
-            InlineKeyboardButton("🗑 Delete Char",    callback_data="owner:delete"),
+            InlineKeyboardButton("📢 Broadcast",      callback_data="owner:broadcast", style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton("🗑 Delete Char",    callback_data="owner:delete",    style=KeyboardButtonStyle.DANGER),
         ],
         [
-            InlineKeyboardButton("🔧 Update Char",    callback_data="owner:update"),
-            InlineKeyboardButton("👤 Sudo Users",     callback_data="owner:sudo"),
+            InlineKeyboardButton("🔧 Update Char",    callback_data="owner:update",        style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton("👤 Sudo Users",     callback_data="owner:sudo",          style=KeyboardButtonStyle.PRIMARY),
         ],
         [
-            InlineKeyboardButton("🖼 Welcome Photos", callback_data="owner:welcomephotos"),
-            InlineKeyboardButton("📊 Bot Stats",      callback_data="owner:stats"),
+            InlineKeyboardButton("🖼 Welcome Photos", callback_data="owner:welcomephotos", style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton("📊 Bot Stats",      callback_data="owner:stats",         style=KeyboardButtonStyle.PRIMARY),
         ],
     ]
     return InlineKeyboardMarkup(rows)
@@ -206,10 +206,10 @@ def _section_kb(section: str) -> InlineKeyboardMarkup:
     next_key = keys[(idx + 1) % len(keys)]
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(f"◀️ {SECTION_LABELS[prev_key]}", callback_data=f"help:{prev_key}"),
-            InlineKeyboardButton(f"{SECTION_LABELS[next_key]} ▶️", callback_data=f"help:{next_key}"),
+            InlineKeyboardButton(f"◀️ {SECTION_LABELS[prev_key]}", callback_data=f"help:{prev_key}", style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton(f"{SECTION_LABELS[next_key]} ▶️", callback_data=f"help:{next_key}", style=KeyboardButtonStyle.PRIMARY),
         ],
-        [InlineKeyboardButton("🏠 Main Menu", callback_data="help:home")],
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="help:home", style=KeyboardButtonStyle.PRIMARY)],
     ])
 
 
@@ -364,7 +364,7 @@ async def action_callback(update: Update, context: CallbackContext) -> None:
         try:
             await q.edit_message_caption(caption=text, parse_mode=ParseMode.HTML,
                                          reply_markup=InlineKeyboardMarkup([[
-                                             InlineKeyboardButton("🏠 Main Menu", callback_data="help:home")
+                                             InlineKeyboardButton("🏠 Main Menu", callback_data="help:home", style=KeyboardButtonStyle.PRIMARY)
                                          ]]))
         except Exception:
             await q.message.reply_text(text, parse_mode=ParseMode.HTML)
@@ -449,7 +449,7 @@ async def owner_callback(update: Update, context: CallbackContext) -> None:
     if info:
         await q.answer()
         back_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🏠 Owner Menu", callback_data="owner:home")]
+            [InlineKeyboardButton("🏠 Owner Menu", callback_data="owner:home", style=KeyboardButtonStyle.PRIMARY)]
         ])
         try:
             await q.edit_message_caption(

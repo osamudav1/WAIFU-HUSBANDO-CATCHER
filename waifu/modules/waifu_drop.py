@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode
+from telegram.constants import KeyboardButtonStyle, ParseMode
 from telegram.ext import (
     CallbackContext, CommandHandler, ConversationHandler,
     MessageHandler, filters,
@@ -529,6 +529,7 @@ async def guess(update: Update, context: CallbackContext) -> None:
         [InlineKeyboardButton(
             f"🔱 Waifus ({total_owned})",
             switch_inline_query_current_chat=f"harem.{user_id}",
+            style=KeyboardButtonStyle.PRIMARY,
         )],
     ])
 

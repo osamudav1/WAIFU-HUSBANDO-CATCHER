@@ -14,7 +14,7 @@ from bson import ObjectId
 from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
-from telegram.constants import ParseMode
+from telegram.constants import KeyboardButtonStyle, ParseMode
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
 from waifu import application, user_collection, market_collection
@@ -89,6 +89,7 @@ async def _build_list(page: int) -> tuple[str, InlineKeyboardMarkup] | None:
         row.append(InlineKeyboardButton(
             label,
             callback_data=f"mkt:card:{lst['_id']}:{page}",
+            style=KeyboardButtonStyle.PRIMARY,
         ))
         if len(row) == 2:
             rows.append(row)
@@ -99,10 +100,10 @@ async def _build_list(page: int) -> tuple[str, InlineKeyboardMarkup] | None:
     # Pagination nav
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("⬅️", callback_data=f"mkt:list:{page-1}"))
-    nav.append(InlineKeyboardButton(f"{page+1} / {total_pages}", callback_data="noop"))
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"mkt:list:{page-1}", style=KeyboardButtonStyle.PRIMARY))
+    nav.append(InlineKeyboardButton(f"{page+1} / {total_pages}", callback_data="noop", style=KeyboardButtonStyle.PRIMARY))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("➡️", callback_data=f"mkt:list:{page+1}"))
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"mkt:list:{page+1}", style=KeyboardButtonStyle.PRIMARY))
     if nav:
         rows.append(nav)
 
@@ -140,8 +141,9 @@ async def _build_card(listing_id_str: str, back_page: int) -> tuple[str, str | N
         [InlineKeyboardButton(
             f"🛒 Buy  —  {lst['price']:,} 🪙",
             callback_data=f"mkt:buy:{lst['_id']}:{back_page}",
+            style=KeyboardButtonStyle.SUCCESS,
         )],
-        [InlineKeyboardButton("🔙 Market ပြန်", callback_data=f"mkt:list:{back_page}")],
+        [InlineKeyboardButton("🔙 Market ပြန်", callback_data=f"mkt:list:{back_page}", style=KeyboardButtonStyle.PRIMARY)],
     ])
 
     return caption, char.get("img_url"), kb
@@ -257,7 +259,7 @@ async def sell(update: Update, context: CallbackContext) -> None:
 async def market(update: Update, context: CallbackContext) -> None:
     total   = await market_collection.count_documents({})
     mp_btn  = InlineKeyboardMarkup([[
-        InlineKeyboardButton("🏪 Market Place", switch_inline_query_current_chat="market"),
+        InlineKeyboardButton("🏪 Market Place", switch_inline_query_current_chat="market", style=KeyboardButtonStyle.PRIMARY),
     ]])
 
     if total == 0:
