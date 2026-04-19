@@ -591,8 +591,8 @@ _HC_SECTIONS: dict[str, dict] = {
 def _hc_kb(section: str) -> InlineKeyboardMarkup:
     nav = _HC_SECTIONS[section]["nav"]
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(label, callback_data=f"hc:{key}") for label, key in nav],
-        [InlineKeyboardButton("📥 Get Out 📥", callback_data="hc:close")],
+        [InlineKeyboardButton(label, callback_data=f"hc:{key}", style=KeyboardButtonStyle.PRIMARY) for label, key in nav],
+        [InlineKeyboardButton("📥 Get Out 📥", callback_data="hc:close", style=KeyboardButtonStyle.DANGER)],
     ])
 
 
@@ -605,7 +605,7 @@ async def help_cmd(update: Update, context: CallbackContext) -> None:
         f"<blockquote>Waifu help Center Below👇🏻</blockquote>"
     )
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("👮🏻‍♂️ Help Center 👮🏻‍♂️", callback_data="hc:catch")]
+        [InlineKeyboardButton("👮🏻‍♂️ Help Center 👮🏻‍♂️", callback_data="hc:catch", style=KeyboardButtonStyle.PRIMARY)]
     ])
     if photo:
         await update.message.reply_photo(
