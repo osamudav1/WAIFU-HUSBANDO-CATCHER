@@ -154,7 +154,7 @@ def _owner_kb(uid: int | None = None) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("🎁 Daily",    callback_data="act:daily",   style=KeyboardButtonStyle.SUCCESS),
-            InlineKeyboardButton("💰 Balance",  callback_data="act:balance", style=KeyboardButtonStyle.PRIMARY),
+            InlineKeyboardButton("💰 Balance",  callback_data="act:balance", style=KeyboardButtonStyle.SUCCESS),
         ],
         # Help sections
         [
