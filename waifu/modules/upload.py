@@ -836,11 +836,97 @@ async def gptest(update: Update, context: CallbackContext) -> None:
         )
 
 
+async def migrateids(update: Update, context: CallbackContext) -> None:
+    """Owner only. /migrateids — strip leading zeros from all character IDs.
+
+    Updates:
+      • anime_characters  : id field
+      • users.characters  : each embedded id field
+      • db.sequences      : resets counter to current max numeric ID
+    """
+    uid = update.effective_user.id
+    if uid != OWNER_ID and not _is_sudo(uid):
+        return
+
+    msg = await update.message.reply_text("⏳ ID migration စတင်နေသည်…")
+
+    all_chars = await collection.find({}, {"id": 1}).to_list(20_000)
+
+    to_migrate: list[tuple[str, str]] = []   # (old_id, new_id)
+    skip_conflict: list[str]          = []
+
+    # Find IDs with leading zeros
+    existing_ids = {c["id"] for c in all_chars}
+    for c in all_chars:
+        old_id = c["id"]
+        if not old_id.isdigit() or not old_id.startswith("0"):
+            continue
+        new_id = str(int(old_id))
+        if new_id == old_id:
+            continue
+        # Conflict check — new_id ရှိပြီးသားဆိုရင် skip
+        if new_id in existing_ids and old_id != new_id:
+            skip_conflict.append(old_id)
+            continue
+        to_migrate.append((old_id, new_id))
+
+    if not to_migrate:
+        await msg.edit_text(
+            "✅ Leading-zero ID မရှိပါ — migration မလိုဘူး!\n"
+            f"<i>Conflicts (skip): {len(skip_conflict)}</i>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    await msg.edit_text(
+        f"⏳ ID <b>{len(to_migrate)}</b> ခု update လုပ်နေသည်…\n"
+        f"Conflicts (skip): <b>{len(skip_conflict)}</b>",
+        parse_mode=ParseMode.HTML,
+    )
+
+    done = 0
+    for old_id, new_id in to_migrate:
+        # 1. anime_characters
+        await collection.update_one({"id": old_id}, {"$set": {"id": new_id}})
+
+        # 2. users.characters array (all users)
+        await user_collection.update_many(
+            {"characters.id": old_id},
+            {"$set": {"characters.$[elem].id": new_id}},
+            array_filters=[{"elem.id": old_id}],
+        )
+        done += 1
+
+    # 3. Reset sequence counter to current max ID + 1
+    all_ids   = await collection.distinct("id")
+    numeric   = [int(i) for i in all_ids if i.isdigit()]
+    max_id    = max(numeric) if numeric else 0
+    await db.sequences.find_one_and_update(
+        {"_id": "character_id"},
+        {"$set": {"sequence_value": max_id}},
+        upsert=True,
+    )
+
+    # Invalidate character cache
+    invalidate_char_list()
+
+    lines = [
+        "✅ <b>ID Migration ပြီးပြီ!</b>\n",
+        f"• Updated IDs : <b>{done}</b>",
+        f"• Skipped (conflict): <b>{len(skip_conflict)}</b>",
+        f"• Sequence counter → <b>{max_id}</b>",
+    ]
+    if skip_conflict:
+        lines.append(f"\n⚠️ Conflicts: <code>{', '.join(skip_conflict[:10])}</code>")
+    await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
+
+
 application.add_handler(_upload_conv)
 application.add_handler(CommandHandler("uploadchar",      uploadchar,      block=False))
 application.add_handler(CommandHandler("delete",          delete,          block=False))
 application.add_handler(CommandHandler("update",          update_char,     block=False))
 application.add_handler(CommandHandler("migrateimgs",     migrate_imgs,    block=False))
+application.add_handler(CommandHandler("migrateids",      migrateids,      block=False))
 application.add_handler(CommandHandler("charactervdadd",  charactervdadd,  block=False))
 application.add_handler(CommandHandler("deletevd",        deletevd,        block=False))
 application.add_handler(CommandHandler("gptest",          gptest,          block=False))

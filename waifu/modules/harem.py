@@ -72,12 +72,22 @@ async def _build_list_view(
         if user:
             set_user(user_id, user)
     if not user or not user.get("characters"):
-        owner_name = user.get("first_name", str(user_id)) if user else str(user_id)
-        msg = (
-            f"📭 <b>{escape(owner_name)}</b> ရဲ့ harem မှာ character မရှိသေးဘူး!"
-            if viewer_id and viewer_id != user_id
-            else "📭 Harem မှာ character မရှိသေးဘူး — character တစ်ကောင် ဖမ်းပေး!"
-        )
+        if not user:
+            # DB မှာ user record မရှိသေး
+            msg = (
+                f"📭 <b>User {user_id}</b> ကို DB မှာ မတွေ့ဘူး — character မဖမ်းရသေးဘူး!"
+                if viewer_id and viewer_id != user_id
+                else "📭 မင်းရဲ့ account DB မှာ မရှိသေးဘူး!\n\n"
+                     "Group မှာ character drop ကျတဲ့အခါ <code>/guess</code> နဲ့ ဖမ်းပေး — harem ပေါ်လာမည်။"
+            )
+        else:
+            owner_name = user.get("first_name", str(user_id))
+            msg = (
+                f"📭 <b>{escape(owner_name)}</b> ရဲ့ harem မှာ character မရှိသေးဘူး!"
+                if viewer_id and viewer_id != user_id
+                else "📭 Harem ဗလာနေသည်!\n\n"
+                     "Group မှာ character drop ကျတဲ့အခါ <code>/guess [နာမည်]</code> နဲ့ ဖမ်းပေး။"
+            )
         return msg, None, InlineKeyboardMarkup([]), 0
 
     chars      = user["characters"]
@@ -207,15 +217,20 @@ async def harem(update: Update, context: CallbackContext, page: int = 0) -> None
 
     if context.args:
         arg = context.args[0].strip()
-        is_char_id = arg.startswith("0") or len(arg) < 7
+
+        # char ID = ဂဏန်းသာပါ + Telegram user ID (9+ digits) မဟုတ်
+        is_char_id = arg.isdigit() and len(arg) < 9
 
         if is_char_id:
             user_doc = await user_collection.find_one({"id": viewer_id})
             chars    = user_doc.get("characters", []) if user_doc else []
             unique   = list({c["id"]: c for c in chars}.values())
             unique.sort(key=lambda x: (x["anime"], x["id"]))
+            # ID ကို leading-zero strip ပြီး compare (001 == 1)
+            norm_arg = str(int(arg))
             char_idx = next(
-                (i for i, c in enumerate(unique) if c["id"].lower() == arg.lower()),
+                (i for i, c in enumerate(unique)
+                 if (str(int(c["id"])) == norm_arg if c["id"].isdigit() else c["id"] == arg)),
                 None,
             )
             if char_idx is None:
@@ -231,7 +246,7 @@ async def harem(update: Update, context: CallbackContext, page: int = 0) -> None
 
         else:
             await update.message.reply_text(
-                "❌ Character ID (ဥပမာ: 0006) သို့မဟုတ် User ID ထည့်ပေး"
+                "❌ Character ID (ဥပမာ: 5) သို့မဟုတ် User ID ထည့်ပေး"
             )
             return
 
