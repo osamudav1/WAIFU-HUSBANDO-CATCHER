@@ -103,13 +103,16 @@ def main() -> None:
         port    = int(os.environ.get("PORT", "8080"))
         domains = os.environ.get("REPLIT_DOMAINS", "")
         domain  = domains.split(",")[0].strip() if domains else ""
+        token   = os.environ.get("BOT_TOKEN", "")
 
-        if domain:
-            webhook_url = f"https://{domain}/{os.environ.get('BOT_TOKEN', '')}"
-            LOGGER.info("Replit webhook on port %d → %s", port, f"https://{domain}/...")
+        if domain and token:
+            url_path    = token
+            webhook_url = f"https://{domain}/{url_path}"
+            LOGGER.info("Replit webhook mode: port=%d url=https://%s/...", port, domain)
             application.run_webhook(
                 listen="0.0.0.0",
                 port=port,
+                url_path=url_path,
                 webhook_url=webhook_url,
                 drop_pending_updates=True,
                 allowed_updates=[
@@ -119,7 +122,7 @@ def main() -> None:
                 ],
             )
         else:
-            LOGGER.warning("REPLIT_DOMAINS empty — polling + health server on port %d", port)
+            LOGGER.warning("REPLIT_DOMAINS/TOKEN empty — falling back to polling + health server on port %d", port)
             t = threading.Thread(target=_run_health_server, args=(port,), daemon=True)
             t.start()
             application.run_polling(**_POLLING_KWARGS)
