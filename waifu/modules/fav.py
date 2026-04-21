@@ -6,7 +6,7 @@ Shows character image with Yes/No buttons to set as favourite.
 from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode
+from telegram.constants import KeyboardButtonStyle, ParseMode
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
 from waifu import application, user_collection, collection as waifu_collection
@@ -64,8 +64,8 @@ async def fav(update: Update, context: CallbackContext) -> None:
     )
 
     keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("🟢 Yes", callback_data=f"fav:set:{uid}:{char_id}"),
-        InlineKeyboardButton("🔴 No",  callback_data=f"fav:no:{uid}"),
+        InlineKeyboardButton("🟢 Yes", callback_data=f"fav:set:{uid}:{char_id}", style=KeyboardButtonStyle.SUCCESS),
+        InlineKeyboardButton("🔴 No",  callback_data=f"fav:no:{uid}",           style=KeyboardButtonStyle.DANGER),
     ]])
 
     if img_url:
