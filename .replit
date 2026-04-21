@@ -29,9 +29,8 @@ args = "python -m waifu"
 outputType = "console"
 
 [deployment]
-deploymentTarget = "vm"
+deploymentTarget = "cloudrun"
 run = ["python", "-m", "waifu"]
-ignorePorts = true
 
 [userenv]
 
