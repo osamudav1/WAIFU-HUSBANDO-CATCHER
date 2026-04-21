@@ -29,7 +29,7 @@ args = "python -m waifu"
 outputType = "console"
 
 [deployment]
-deploymentTarget = "cloudrun"
+deploymentTarget = "vm"
 run = ["python", "-m", "waifu"]
 
 [userenv]
