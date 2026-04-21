@@ -51,7 +51,8 @@ def _rarity_icon(rarity: str) -> str:
 async def _get_prefs(user_id: int) -> tuple[str, str]:
     doc = get_user(user_id)
     if doc is None:
-        doc = await user_collection.find_one({"id": user_id}, {"harem_mode": 1, "harem_sort": 1})
+        # Full document fetch — partial projection cache မှာ မထည့်!
+        doc = await user_collection.find_one({"id": user_id})
         if doc:
             set_user(user_id, doc)
     mode = (doc or {}).get("harem_mode", "default")

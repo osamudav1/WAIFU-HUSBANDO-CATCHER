@@ -547,10 +547,11 @@ async def guess(update: Update, context: CallbackContext) -> None:
         if global_rank_str else ""
     )
 
-    # Total unique characters owned (after this catch) — fresh from DB
+    # Total unique characters owned (after this catch) — fresh full doc
     async with db_op():
-        updated_user = await user_collection.find_one({"id": user_id}, {"characters": 1})
-    set_user(user_id, updated_user or {})
+        updated_user = await user_collection.find_one({"id": user_id})
+    if updated_user:
+        set_user(user_id, updated_user)
     total_owned  = len({c["id"] for c in (updated_user or {}).get("characters", [])})
 
     kb = InlineKeyboardMarkup([
