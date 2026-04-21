@@ -1,0 +1,10 @@
+.env
+.git
+.cache
+.local
+.pythonlibs
+logs/
+__pycache__/
+*.pyc
+*.pyo
+attached_assets/
