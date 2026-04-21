@@ -5,6 +5,7 @@ Run with:  python -m waifu
 Mode selection (automatic):
   - Fly.io      → FLY_APP_NAME is set   → polling + health server on PORT
   - Koyeb       → KOYEB_APP_NAME is set → polling + health server on PORT
+  - Render       → RENDER=true           → polling (worker; no health server)
   - Replit VM   → REPLIT_DEPLOYMENT=1   → webhook mode (no Conflict)
   - Dev / local → polling mode (no health server)
 """
@@ -73,6 +74,7 @@ def main() -> None:
     # ── Detect platform ────────────────────────────────────────────────────────
     is_fly      = bool(os.environ.get("FLY_APP_NAME"))
     is_koyeb    = bool(os.environ.get("KOYEB_APP_NAME"))
+    is_render   = os.environ.get("RENDER", "").lower() == "true"
     is_deployed = os.environ.get("REPLIT_DEPLOYMENT", "0") == "1"
 
     if is_fly:
@@ -89,6 +91,11 @@ def main() -> None:
         t = threading.Thread(target=_run_health_server, args=(port,), daemon=True)
         t.start()
         LOGGER.info("Koyeb mode: polling + health server on port %d", port)
+        application.run_polling(**_POLLING_KWARGS)
+
+    elif is_render:
+        # ── Render worker: plain polling (no HTTP port needed for workers) ─────
+        LOGGER.info("Render mode: polling…")
         application.run_polling(**_POLLING_KWARGS)
 
     elif is_deployed:
