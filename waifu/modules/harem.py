@@ -13,6 +13,7 @@ from telegram.error import BadRequest
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
 from waifu import application, user_collection, collection as waifu_collection
+from waifu.cache import get_user, set_user
 
 _CHARS_PER_PAGE = 10
 
@@ -48,7 +49,11 @@ def _rarity_icon(rarity: str) -> str:
 
 
 async def _get_prefs(user_id: int) -> tuple[str, str]:
-    doc = await user_collection.find_one({"id": user_id}, {"harem_mode": 1, "harem_sort": 1})
+    doc = get_user(user_id)
+    if doc is None:
+        doc = await user_collection.find_one({"id": user_id}, {"harem_mode": 1, "harem_sort": 1})
+        if doc:
+            set_user(user_id, doc)
     mode = (doc or {}).get("harem_mode", "default")
     sort = (doc or {}).get("harem_sort", "anime")
     return mode, sort
@@ -61,7 +66,11 @@ async def _build_list_view(
     mode: str = "default",
     sort: str = "anime",
 ) -> tuple[str, str | None, InlineKeyboardMarkup, int]:
-    user = await user_collection.find_one({"id": user_id})
+    user = get_user(user_id)
+    if user is None:
+        user = await user_collection.find_one({"id": user_id})
+        if user:
+            set_user(user_id, user)
     if not user or not user.get("characters"):
         owner_name = user.get("first_name", str(user_id)) if user else str(user_id)
         msg = (

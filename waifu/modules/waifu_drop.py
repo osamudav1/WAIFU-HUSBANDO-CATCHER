@@ -28,6 +28,12 @@ from waifu import (
     bot_settings_collection, registered_chats,
     LOGGER, OWNER_ID, sudo_users,
 )
+from waifu.cache import (
+    db_op, user_lock,
+    get_user, set_user, invalidate_user,
+    get_char_list, set_char_list,
+    get_chat_cfg, set_chat_cfg,
+)
 # ── Conversation state ────────────────────────────────────────────────────────
 _WAIT_ANNOUNCE = 0
 
@@ -110,11 +116,15 @@ def _split_rarity(rarity: str) -> tuple[str, str]:
 # ── Drop message-count threshold (per group, stored in DB) ────────────────────
 
 async def _get_drop_threshold(chat_id: int) -> int:
-    """Return how many messages trigger a drop for this chat."""
-    doc = await user_totals_collection.find_one({"chat_id": chat_id})
-    if doc and "drop_msg_count" in doc:
-        return max(1, int(doc["drop_msg_count"]))
-    return _DROP_MSG_DEFAULT
+    """Return how many messages trigger a drop for this chat (cached 5 min)."""
+    cached = get_chat_cfg(chat_id)
+    if cached is not None:
+        return cached
+    async with db_op():
+        doc = await user_totals_collection.find_one({"chat_id": chat_id})
+    threshold = max(1, int(doc["drop_msg_count"])) if (doc and "drop_msg_count" in doc) else _DROP_MSG_DEFAULT
+    set_chat_cfg(chat_id, threshold)
+    return threshold
 
 
 # ── Rolling window ────────────────────────────────────────────────────────────
@@ -130,7 +140,14 @@ async def _send_drop(chat_id: int, bot, forced_char: dict | None = None) -> None
     if forced_char is not None:
         char = forced_char
     else:
-        all_chars = await collection.find({}).to_list(length=5000)
+        all_chars = get_char_list()
+        if all_chars is None:
+            async with db_op():
+                all_chars = await collection.find({}).to_list(length=5000)
+            set_char_list(all_chars)
+            LOGGER.debug("Char list cache MISS — fetched %d chars from DB", len(all_chars))
+        else:
+            LOGGER.debug("Char list cache HIT — %d chars", len(all_chars))
         if not all_chars:
             LOGGER.debug("No characters in DB — skipping drop for chat %s", chat_id)
             return
@@ -386,38 +403,43 @@ async def guess(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text("❌ Wrong name, try again!")
         return
 
+    # ── Per-user lock: prevent concurrent guesses from same user ─────────────────
+    async with user_lock(user_id):
+
     # ── Daily catch limit (25/day) ────────────────────────────────────────────
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    lim_doc   = await user_collection.find_one(
-        {"id": user_id}, {"daily_catch_date": 1, "daily_catch_count": 1}
-    )
-    last_date    = (lim_doc or {}).get("daily_catch_date", "")
-    daily_count  = (lim_doc or {}).get("daily_catch_count", 0) if last_date == today_str else 0
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        lim_doc   = get_user(user_id)
+        if lim_doc is None:
+            async with db_op():
+                lim_doc = await user_collection.find_one({"id": user_id})
+            if lim_doc:
+                set_user(user_id, lim_doc)
+        last_date    = (lim_doc or {}).get("daily_catch_date", "")
+        daily_count  = (lim_doc or {}).get("daily_catch_count", 0) if last_date == today_str else 0
 
-    if daily_count >= 25:
-        await update.message.reply_text(
-            "🎃 ʏᴏᴜʀ ᴄᴀᴛᴄʜ ʟɪᴍɪᴛ ɪs ʀᴇᴀᴄʜᴇᴅ.\n"
-            "ʏᴏᴜ ᴄᴀɴ ᴏɴʟʏ ᴄᴀᴛᴄʜ 25 ᴄʜᴀʀᴀᴄᴛᴇʀs ᴘᴇʀ ᴅᴀʏ.\n"
-            "ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ ᴜɴᴛɪʟ ᴛʜᴇ ɴᴇᴡ ᴅᴀʏ."
-        )
-        return
+        if daily_count >= 25:
+            await update.message.reply_text(
+                "🎃 ʏᴏᴜʀ ᴄᴀᴛᴄʜ ʟɪᴍɪᴛ ɪs ʀᴇᴀᴄʜᴇᴅ.\n"
+                "ʏᴏᴜ ᴄᴀɴ ᴏɴʟʏ ᴄᴀᴛᴄʜ 25 ᴄʜᴀʀᴀᴄᴛᴇʀs ᴘᴇʀ ᴅᴀʏ.\n"
+                "ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ ᴜɴᴛɪʟ ᴛʜᴇ ɴᴇᴡ ᴅᴀʏ."
+            )
+            return
 
-    # ── Correct guess ──────────────────────────────────────────────────────────
-    claimers.add(user_id)
-    _active_char.pop(chat_id, None)
-    _drop_msg.pop(chat_id, None)
-    # Cancel the expiry countdown since someone claimed it
-    _exp = _expiry_tasks.pop(chat_id, None)
-    if _exp and not _exp.done():
-        _exp.cancel()
+        # ── Correct guess ──────────────────────────────────────────────────────────
+        claimers.add(user_id)
+        _active_char.pop(chat_id, None)
+        _drop_msg.pop(chat_id, None)
+        # Cancel the expiry countdown since someone claimed it
+        _exp = _expiry_tasks.pop(chat_id, None)
+        if _exp and not _exp.done():
+            _exp.cancel()
 
-    # Rarity-based XP
-    xp_earned = _XP_MAP.get(char.get("rarity", ""), _XP_DEFAULT)
+        # Rarity-based XP
+        xp_earned = _XP_MAP.get(char.get("rarity", ""), _XP_DEFAULT)
 
-    # Fetch old XP for level-up check (before increment)
-    old_doc   = await user_collection.find_one({"id": user_id})
-    old_xp    = (old_doc or {}).get("xp", 0)
-    old_level = _calc_level(old_xp)[0]
+        # Old XP from cached user doc (no extra DB round-trip)
+        old_xp    = (lim_doc or {}).get("xp", 0)
+        old_level = _calc_level(old_xp)[0]
 
     char_rarity = char.get("rarity", "")
 
@@ -452,16 +474,18 @@ async def guess(update: Update, context: CallbackContext) -> None:
             "daily_catch_date": today_str, "daily_catch_count": 1,
         }
 
-    await user_collection.update_one(
-        {"id": user_id},
-        {
-            "$push": {"characters": char_to_push},
-            "$inc":  inc_fields,
-            "$set":  set_fields,
-            "$setOnInsert": {"coins": 0, "wins": 0, "favorites": []},
-        },
-        upsert=True,
-    )
+    async with db_op():
+        await user_collection.update_one(
+            {"id": user_id},
+            {
+                "$push": {"characters": char_to_push},
+                "$inc":  inc_fields,
+                "$set":  set_fields,
+                "$setOnInsert": {"coins": 0, "wins": 0, "favorites": []},
+            },
+            upsert=True,
+        )
+    invalidate_user(user_id)   # cache ကို ပြန် fresh လုပ်
 
     # Group totals
     await group_user_totals_collection.update_one(
@@ -489,10 +513,12 @@ async def guess(update: Update, context: CallbackContext) -> None:
             f"<i>+{_LEVEL_UP_COINS} 🪙 Bonus coins!</i>"
         )
         # Grant bonus coins
-        await user_collection.update_one(
-            {"id": user_id},
-            {"$inc": {"coins": _LEVEL_UP_COINS}},
-        )
+        async with db_op():
+            await user_collection.update_one(
+                {"id": user_id},
+                {"$inc": {"coins": _LEVEL_UP_COINS}},
+            )
+        invalidate_user(user_id)
         group_docs = await top_global_groups_collection.find(
             {}, {"group_id": 1}
         ).to_list(length=500)
@@ -521,8 +547,10 @@ async def guess(update: Update, context: CallbackContext) -> None:
         if global_rank_str else ""
     )
 
-    # Total unique characters owned (after this catch)
-    updated_user = await user_collection.find_one({"id": user_id}, {"characters": 1})
+    # Total unique characters owned (after this catch) — fresh from DB
+    async with db_op():
+        updated_user = await user_collection.find_one({"id": user_id}, {"characters": 1})
+    set_user(user_id, updated_user or {})
     total_owned  = len({c["id"] for c in (updated_user or {}).get("characters", [])})
 
     kb = InlineKeyboardMarkup([

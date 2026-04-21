@@ -19,6 +19,7 @@ from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
 from waifu import application, user_collection, market_collection
 from waifu.config import Config
+from waifu.cache import db_op, get_user, set_user, invalidate_user
 
 _DAILY_COOLDOWN  = 86_400   # 24 h
 _LIST_FEE        = 50       # coins charged per listing
@@ -43,7 +44,10 @@ def _fmt_time(secs: int) -> str:
 
 
 async def _ensure_user(user_id: int, u) -> dict:
-    doc = await user_collection.find_one({"id": user_id})
+    doc = get_user(user_id)
+    if doc is None:
+        async with db_op():
+            doc = await user_collection.find_one({"id": user_id})
     if not doc:
         doc = {
             "id": user_id, "username": u.username,
@@ -51,7 +55,9 @@ async def _ensure_user(user_id: int, u) -> dict:
             "coins": 0, "xp": 0, "wins": 0,
             "total_guesses": 0, "favorites": [],
         }
-        await user_collection.insert_one(doc)
+        async with db_op():
+            await user_collection.insert_one(doc)
+    set_user(user_id, doc)
     return doc
 
 
@@ -178,10 +184,12 @@ async def daily(update: Update, context: CallbackContext) -> None:
         return
 
     reward = Config.DAILY_COINS
-    await user_collection.update_one(
-        {"id": u.id},
-        {"$inc": {"coins": reward}, "$set": {"last_daily": now}},
-    )
+    async with db_op():
+        await user_collection.update_one(
+            {"id": u.id},
+            {"$inc": {"coins": reward}, "$set": {"last_daily": now}},
+        )
+    invalidate_user(u.id)
     await update.message.reply_text(
         f"🎁 <b>Daily reward!</b>\n\n"
         f"You received <b>{reward:,} coins</b> 🪙\n"
@@ -229,13 +237,15 @@ async def sell(update: Update, context: CallbackContext) -> None:
         return
 
     # Deduct listing fee + remove char from harem (escrow)
-    await user_collection.update_one(
-        {"id": u.id},
-        {
-            "$pull": {"characters": {"id": char_id}},
-            "$inc":  {"coins": -_LIST_FEE},
-        },
-    )
+    async with db_op():
+        await user_collection.update_one(
+            {"id": u.id},
+            {
+                "$pull": {"characters": {"id": char_id}},
+                "$inc":  {"coins": -_LIST_FEE},
+            },
+        )
+    invalidate_user(u.id)
     listing = {
         "seller_id":   u.id,
         "seller_name": u.first_name,
@@ -394,14 +404,18 @@ async def market_cb(update: Update, context: CallbackContext) -> None:
             return
 
         # Atomic exchange
-        await user_collection.update_one(
-            {"id": uid},
-            {"$inc": {"coins": -listing["price"]}, "$push": {"characters": listing["char"]}},
-        )
-        await user_collection.update_one(
-            {"id": listing["seller_id"]},
-            {"$inc": {"coins": listing["price"]}},
-        )
+        async with db_op():
+            await user_collection.update_one(
+                {"id": uid},
+                {"$inc": {"coins": -listing["price"]}, "$push": {"characters": listing["char"]}},
+            )
+        async with db_op():
+            await user_collection.update_one(
+                {"id": listing["seller_id"]},
+                {"$inc": {"coins": listing["price"]}},
+            )
+        invalidate_user(uid)
+        invalidate_user(listing["seller_id"])
         await market_collection.delete_one({"_id": oid})
 
         char = listing["char"]

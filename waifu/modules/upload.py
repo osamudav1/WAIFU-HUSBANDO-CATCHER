@@ -24,6 +24,7 @@ from telegram.ext import (
 
 from waifu import application, collection, user_collection, db, sudo_users, OWNER_ID, CHARA_CHANNEL_ID, GROUP_ID
 from waifu.config import Config
+from waifu.cache import invalidate_char_list
 
 RARITY_MAP  = Config.RARITY_MAP
 RARITY_STRS = {v.lower(): v for v in RARITY_MAP.values()}
@@ -318,6 +319,7 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
 
     try:
         await collection.insert_one(char)
+        invalidate_char_list()
         await update.message.reply_text(
             f"🎉 <b>Upload ပြီးပြီ!</b>\n\n"
             f"🌸 <b>{name}</b>\n"
@@ -579,6 +581,7 @@ async def uploadchar(update: Update, context: CallbackContext) -> None:
 
     try:
         await collection.insert_one(char)
+        invalidate_char_list()
         await update.message.reply_text(
             f"🎉 <b>{parsed['name']}</b> upload ပြီးပြီ!\n"
             f"💎 {parsed['rarity']}\n"
@@ -611,6 +614,7 @@ async def delete(update: Update, context: CallbackContext) -> None:
     if not char:
         await update.message.reply_text("❌ Character မတွေ့ဘူး")
         return
+    invalidate_char_list()
 
     # Count how many users have this character before removing
     affected_users = await user_collection.count_documents(
@@ -674,6 +678,7 @@ async def update_char(upd: Update, context: CallbackContext) -> None:
         new_val = raw
 
     await collection.update_one({"id": char_id}, {"$set": {field: new_val}})
+    invalidate_char_list()
     await upd.message.reply_text(
         f"✅ <b>{char['name']}</b> — <code>{field}</code> update ပြီ",
         parse_mode=ParseMode.HTML,

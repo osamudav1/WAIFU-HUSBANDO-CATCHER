@@ -10,10 +10,38 @@ from waifu import application, collection, db, user_collection, market_collectio
 _PAGE = 50
 
 
+async def _safe_index(coll, keys, **kwargs) -> None:
+    """Create index silently — skip if one with same name/key already exists."""
+    try:
+        await coll.create_index(keys, **kwargs)
+    except Exception as e:
+        LOGGER.debug("Index skip (%s.%s): %s", coll.name, keys, e)
+
+
 async def create_indexes() -> None:
-    await db.anime_characters.create_index([("id",    ASCENDING)])
-    await db.anime_characters.create_index([("anime", ASCENDING)])
-    await db.users.create_index([("characters.id", ASCENDING)])
+    # ── anime_characters ──────────────────────────────────────────────────────
+    await _safe_index(db.anime_characters, [("id",            ASCENDING)])
+    await _safe_index(db.anime_characters, [("anime",         ASCENDING)])
+    await _safe_index(db.anime_characters, [("rarity",        ASCENDING)])
+    await _safe_index(db.anime_characters, [("claimed_count", ASCENDING)])
+    await _safe_index(db.anime_characters, [("name",          ASCENDING)])
+    # ── users ─────────────────────────────────────────────────────────────────
+    await _safe_index(db.users, [("id",            ASCENDING)])
+    await _safe_index(db.users, [("characters.id", ASCENDING)])
+    await _safe_index(db.users, [("xp",            ASCENDING)])
+    await _safe_index(db.users, [("coins",         ASCENDING)])
+    # ── chat_settings (drop thresholds) ──────────────────────────────────────
+    await _safe_index(db.chat_settings, [("chat_id", ASCENDING)])
+    # ── group_user_totals ─────────────────────────────────────────────────────
+    await _safe_index(db.group_user_totals, [("user_id",  ASCENDING), ("group_id", ASCENDING)])
+    await _safe_index(db.group_user_totals, [("count",    ASCENDING)])
+    # ── top_groups ────────────────────────────────────────────────────────────
+    await _safe_index(db.top_groups, [("group_id", ASCENDING)])
+    await _safe_index(db.top_groups, [("count",    ASCENDING)])
+    # ── market_listings ───────────────────────────────────────────────────────
+    await _safe_index(db.market_listings, [("price",     ASCENDING)])
+    await _safe_index(db.market_listings, [("seller_id", ASCENDING)])
+    LOGGER.info("MongoDB indexes ensured.")
 
 
 async def _batch_global(ids: list) -> dict:

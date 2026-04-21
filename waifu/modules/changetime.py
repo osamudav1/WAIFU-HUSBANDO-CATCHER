@@ -15,6 +15,7 @@ from telegram.ext import CommandHandler, CallbackContext
 
 from waifu import application, user_totals_collection, sudo_users, OWNER_ID
 from waifu.modules.waifu_drop import _DROP_MSG_DEFAULT, restart_drop_task
+from waifu.cache import invalidate_chat_cfg
 
 _MIN, _MAX = 1, 9999
 
@@ -115,6 +116,7 @@ async def setdropcount(update: Update, context: CallbackContext) -> None:
                     upsert=True,
                     return_document=ReturnDocument.AFTER,
                 )
+                invalidate_chat_cfg(gid)
                 restart_drop_task(gid, context.bot)
 
             await update.message.reply_text(
@@ -143,6 +145,7 @@ async def setdropcount(update: Update, context: CallbackContext) -> None:
             upsert=True,
             return_document=ReturnDocument.AFTER,
         )
+        invalidate_chat_cfg(target_cid)
         restart_drop_task(target_cid, context.bot)
         try:
             chat_obj = await context.bot.get_chat(target_cid)
@@ -185,6 +188,7 @@ async def setdropcount(update: Update, context: CallbackContext) -> None:
         upsert=True,
         return_document=ReturnDocument.AFTER,
     )
+    invalidate_chat_cfg(chat.id)
     restart_drop_task(chat.id, context.bot)
     await update.message.reply_text(
         f"✅ Drop threshold: <b>{old}</b> → <b>{n}</b> messages တိုင်း drop\n"
@@ -225,6 +229,7 @@ async def resetdropcount(update: Update, context: CallbackContext) -> None:
                     {"chat_id": gid},
                     {"$unset": {"drop_msg_count": ""}},
                 )
+                invalidate_chat_cfg(gid)
                 restart_drop_task(gid, context.bot)
             await update.message.reply_text(
                 f"✅ Group <b>{len(all_groups)}</b> ခုအကုန်လုံး\n"
@@ -245,6 +250,7 @@ async def resetdropcount(update: Update, context: CallbackContext) -> None:
             {"chat_id": target_cid},
             {"$unset": {"drop_msg_count": ""}},
         )
+        invalidate_chat_cfg(target_cid)
         restart_drop_task(target_cid, context.bot)
         try:
             chat_obj = await context.bot.get_chat(target_cid)
@@ -267,6 +273,7 @@ async def resetdropcount(update: Update, context: CallbackContext) -> None:
         {"chat_id": chat.id},
         {"$unset": {"drop_msg_count": ""}},
     )
+    invalidate_chat_cfg(chat.id)
     restart_drop_task(chat.id, context.bot)
     await update.message.reply_text(
         f"✅ Default ပြန်သတ်မှတ်ပြီ: <b>{_DROP_MSG_DEFAULT}</b> messages တိုင်း drop",

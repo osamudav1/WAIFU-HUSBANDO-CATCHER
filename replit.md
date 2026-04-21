@@ -9,8 +9,10 @@ Users can "catch" anime characters (waifus/husbandos) that are automatically dro
 ## Tech Stack
 
 - **Language**: Python 3.10+
-- **Telegram Framework**: python-telegram-bot v20.7 (async polling)
-- **Database**: MongoDB via Motor (async driver)
+- **Telegram Framework**: python-telegram-bot v22.7 (async polling, colored buttons)
+- **Database**: MongoDB via Motor (async driver) with optimized indexes
+- **Caching**: cachetools TTLCache (user docs 30s, char list 120s, chat config 5m)
+- **Concurrency**: asyncio.Semaphore (DB rate limit) + per-user asyncio.Lock (message queue)
 - **Scheduling**: APScheduler for timed character drops
 - **Config**: python-dotenv for environment variable loading
 
