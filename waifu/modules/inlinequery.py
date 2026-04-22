@@ -288,11 +288,11 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
 
 async def search_cmd(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text(
-        "⬜ <b>TO SEARCH CHARACTER CLICK ON BUTTON BELOW</b>",
+        "🟦 <b>TO SEARCH CHARACTER CLICK ON BUTTON BELOW</b>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton(
-                "🔨 SEARCH CHARACTERS",
+                "🟦 SEARCH CHARACTERS 🟦",
                 switch_inline_query_current_chat="",
             ),
         ]]),
