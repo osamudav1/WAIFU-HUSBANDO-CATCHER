@@ -5,7 +5,7 @@ from pymongo import ASCENDING
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultCachedPhoto, InlineQueryResultArticle, InputTextMessageContent, Update
 from telegram.constants import ParseMode
 from telegram.ext import CallbackContext, CommandHandler, InlineQueryHandler
-from waifu import application, collection, db, user_collection, market_collection, star_market_collection, LOGGER
+from waifu import application, collection, db, user_collection, market_collection, star_market_collection, bot_settings_collection, LOGGER
 
 _PAGE = 50
 
@@ -95,6 +95,10 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
         # Only emit next_offset when more results actually exist
         next_offset   = str(offset + len(page_listings)) if len(all_listings) > offset + _PAGE else ""
 
+        # Conversion rate (for legacy listings without ton_price)
+        rate_doc = await bot_settings_collection.find_one({"_id": "stars_per_ton"})
+        rate     = int(rate_doc["value"]) if rate_doc and rate_doc.get("value") else 500
+
         results = []
         for li in page_listings:
             char   = li.get("char", {})
@@ -104,6 +108,9 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
             rarity = char.get("rarity", "?")
             stars  = li.get("star_price")
             ton    = li.get("ton_price")
+            # Auto-derive TON from Stars when listing has none
+            if not ton and stars:
+                ton = round(stars / rate, 4)
             lid    = str(li["_id"])
 
             price_lines = []

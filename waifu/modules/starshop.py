@@ -615,15 +615,27 @@ async def _start_ton_payment(update: Update, context: CallbackContext, oid_str: 
     except Exception:
         return
     li = await star_market_collection.find_one({"_id": oid})
-    if not li or not li.get("ton_price"):
+    if not li:
         await cq.answer("❌ Listing မရှိ။", show_alert=True)
+        return
+
+    # Auto-derive TON for legacy listings missing ton_price
+    ton_price = li.get("ton_price")
+    ton_nano  = li.get("ton_nano")
+    if (not ton_price or not ton_nano) and li.get("star_price"):
+        rate = await _get_stars_per_ton()
+        ton_price = round(li["star_price"] / rate, 4)
+        ton_nano  = int(round(ton_price * _TON_DECIMALS))
+
+    if not ton_price or not ton_nano:
+        await cq.answer("❌ TON price မရရှိနိုင်ပါ။", show_alert=True)
         return
 
     memo = "WMK-" + secrets.token_hex(4).upper()
     order = {
         "listing_id": oid,
         "buyer_id":   cq.from_user.id,
-        "amount_nano": li["ton_nano"],
+        "amount_nano": ton_nano,
         "wallet":     wallet,
         "memo":       memo,
         "created_at": time.time(),
@@ -632,10 +644,10 @@ async def _start_ton_payment(update: Update, context: CallbackContext, oid_str: 
     res = await ton_orders_collection.insert_one(order)
     order_id = str(res.inserted_id)
 
-    deeplink = f"ton://transfer/{wallet}?amount={li['ton_nano']}&text={memo}"
+    deeplink = f"ton://transfer/{wallet}?amount={ton_nano}&text={memo}"
     text = (
         "💎 <b>TON Payment</b>\n\n"
-        f"Amount: <b>{li['ton_price']:g} TON</b>\n"
+        f"Amount: <b>{ton_price:g} TON</b>\n"
         f"To wallet: <code>{escape(wallet)}</code>\n"
         f"Memo (REQUIRED): <code>{memo}</code>\n\n"
         "1. Tap <b>Open Wallet</b> below (Tonkeeper / @wallet)\n"
