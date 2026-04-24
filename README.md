@@ -1,3 +1,13 @@
+---
+title: Waifu Catcher Bot
+emoji: 🌸
+colorFrom: pink
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 <div align="center">
 
 <img src="https://i.ibb.co/gbXCJDZy/download-73.jpg" alt="Waifu Catcher Banner" width="400" style="border-radius: 16px;" />

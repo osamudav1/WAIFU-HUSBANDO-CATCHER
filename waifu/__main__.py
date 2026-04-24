@@ -3,11 +3,12 @@ waifu/__main__.py  —  Entry point.
 Run with:  python -m waifu
 
 Mode selection (automatic):
-  - Fly.io      → FLY_APP_NAME is set   → polling + health server on PORT
-  - Koyeb       → KOYEB_APP_NAME is set → polling + health server on PORT
-  - Render       → RENDER=true           → polling (worker; no health server)
-  - Replit VM   → REPLIT_DEPLOYMENT=1   → webhook mode (no Conflict)
-  - Dev / local → polling mode (no health server)
+  - Fly.io          → FLY_APP_NAME is set    → polling + health server on PORT
+  - Koyeb           → KOYEB_APP_NAME is set  → polling + health server on PORT
+  - Hugging Face    → SPACE_ID is set        → polling + health server on 7860
+  - Render          → RENDER=true            → polling (worker; no health server)
+  - Replit VM       → REPLIT_DEPLOYMENT=1    → webhook mode (no Conflict)
+  - Dev / local     → polling mode (no health server)
 """
 import importlib
 import os
@@ -62,18 +63,21 @@ def main() -> None:
     from waifu import application
     application.post_init = _post_init
 
+    _ALLOWED_UPDATES = [
+        "message", "edited_message", "callback_query",
+        "inline_query", "chosen_inline_result",
+        "chat_member", "my_chat_member",
+        "pre_checkout_query", "shipping_query",
+    ]
     _POLLING_KWARGS = dict(
         drop_pending_updates=True,
-        allowed_updates=[
-            "message", "edited_message", "callback_query",
-            "inline_query", "chosen_inline_result",
-            "chat_member", "my_chat_member",
-        ],
+        allowed_updates=_ALLOWED_UPDATES,
     )
 
     # ── Detect platform ────────────────────────────────────────────────────────
     is_fly      = bool(os.environ.get("FLY_APP_NAME"))
     is_koyeb    = bool(os.environ.get("KOYEB_APP_NAME"))
+    is_hf       = bool(os.environ.get("SPACE_ID"))
     is_render   = os.environ.get("RENDER", "").lower() == "true"
     is_deployed = os.environ.get("REPLIT_DEPLOYMENT", "0") == "1"
 
@@ -91,6 +95,14 @@ def main() -> None:
         t = threading.Thread(target=_run_health_server, args=(port,), daemon=True)
         t.start()
         LOGGER.info("Koyeb mode: polling + health server on port %d", port)
+        application.run_polling(**_POLLING_KWARGS)
+
+    elif is_hf:
+        # ── Hugging Face Spaces: health server on 7860 + polling ──────────────
+        port = int(os.environ.get("PORT", "7860"))
+        t = threading.Thread(target=_run_health_server, args=(port,), daemon=True)
+        t.start()
+        LOGGER.info("Hugging Face Spaces mode: polling + health server on port %d", port)
         application.run_polling(**_POLLING_KWARGS)
 
     elif is_render:
@@ -115,11 +127,7 @@ def main() -> None:
                 url_path=url_path,
                 webhook_url=webhook_url,
                 drop_pending_updates=True,
-                allowed_updates=[
-                    "message", "edited_message", "callback_query",
-                    "inline_query", "chosen_inline_result",
-                    "chat_member", "my_chat_member",
-                ],
+                allowed_updates=_ALLOWED_UPDATES,
             )
         else:
             LOGGER.warning("REPLIT_DOMAINS/TOKEN empty — falling back to polling + health server on port %d", port)

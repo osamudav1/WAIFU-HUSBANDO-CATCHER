@@ -50,6 +50,8 @@ top_global_groups_collection = db["top_groups"]
 pm_users                     = db["pm_users"]
 market_collection            = db["market_listings"]
 bm_market_collection         = db["bm_market"]
+star_market_collection       = db["star_market"]
+ton_orders_collection        = db["ton_orders"]
 active_drops_collection      = db["active_drops"]
 bot_settings_collection      = db["bot_settings"]
 waifu_collection             = collection
@@ -97,7 +99,8 @@ __all__ = [
     "GROUP_ID", "CHARA_CHANNEL_ID", "PHOTO_URL", "SUPPORT_CHAT", "UPDATE_CHAT",
     "collection", "user_collection", "user_totals_collection",
     "group_user_totals_collection", "top_global_groups_collection",
-    "pm_users", "market_collection", "bm_market_collection", "active_drops_collection",
+    "pm_users", "market_collection", "bm_market_collection",
+    "star_market_collection", "ton_orders_collection", "active_drops_collection",
     "bot_settings_collection", "waifu_collection",
     "registered_chats",
 ]
