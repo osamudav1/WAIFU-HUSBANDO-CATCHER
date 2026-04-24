@@ -5,7 +5,7 @@ from pymongo import ASCENDING
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultCachedPhoto, InlineQueryResultArticle, InputTextMessageContent, Update
 from telegram.constants import ParseMode
 from telegram.ext import CallbackContext, CommandHandler, InlineQueryHandler
-from waifu import application, collection, db, user_collection, market_collection, LOGGER
+from waifu import application, collection, db, user_collection, market_collection, star_market_collection, LOGGER
 
 _PAGE = 50
 
@@ -74,9 +74,84 @@ async def inlinequery(update: Update, context: CallbackContext) -> None:
     user: dict | None = None
     chars: list[dict] = []
 
-    _COLL_PREFIXES  = ("collection.", "harem.")
-    _is_market_query = raw.startswith("market")
-    _is_user_query   = any(raw.startswith(p) for p in _COLL_PREFIXES)
+    _COLL_PREFIXES   = ("collection.", "harem.")
+    _is_market_query   = raw.startswith("market")
+    _is_starshop_query = raw.startswith("starshop")
+    _is_user_query     = any(raw.startswith(p) for p in _COLL_PREFIXES)
+
+    # ── Star-Shop gallery ─────────────────────────────────────────────────────
+    if _is_starshop_query:
+        search = raw[len("starshop"):].strip()
+        query  = {}
+        if search:
+            pat   = re.escape(search)
+            query = {"$or": [
+                {"char.name":  {"$regex": pat, "$options": "i"}},
+                {"char.anime": {"$regex": pat, "$options": "i"}},
+            ]}
+        all_listings = await star_market_collection.find(query).sort("listed_at", -1).to_list(5000)
+
+        page_listings = all_listings[offset: offset + _PAGE]
+        # Only emit next_offset when more results actually exist
+        next_offset   = str(offset + len(page_listings)) if len(all_listings) > offset + _PAGE else ""
+
+        results = []
+        for li in page_listings:
+            char   = li.get("char", {})
+            img    = char.get("img_url", "")
+            name   = escape(char.get("name", "?"))
+            anime  = escape(char.get("anime", "?"))
+            rarity = char.get("rarity", "?")
+            stars  = li.get("star_price")
+            ton    = li.get("ton_price")
+            lid    = str(li["_id"])
+
+            price_lines = []
+            if stars: price_lines.append(f"⭐ <b>{stars}</b> Stars")
+            if ton:   price_lines.append(f"💎 <b>{ton:g}</b> TON")
+            price_block = "\n".join(price_lines) if price_lines else "—"
+
+            cap = (
+                f"🛒 <b>Star-Shop</b>\n\n"
+                f"🌸 <b>{name}</b>\n"
+                f"📺 {anime}\n"
+                f"💎 {rarity}\n\n"
+                f"{price_block}\n\n"
+                f"🆔 <code>{lid}</code>\n\n"
+                f"<i>Tap below to buy</i>"
+            )
+
+            kb_rows = []
+            if stars:
+                kb_rows.append([InlineKeyboardButton(
+                    f"⭐  Buy: {stars} Stars",
+                    callback_data=f"sshop_buystar_{lid}",
+                )])
+            if ton:
+                kb_rows.append([InlineKeyboardButton(
+                    f"💎  Buy: {ton:g} TON",
+                    callback_data=f"sshop_buyton_{lid}",
+                )])
+
+            if _is_tg_file_id(img):
+                results.append(InlineQueryResultCachedPhoto(
+                    id=f"sshop_{lid}_{time.time_ns()}",
+                    photo_file_id=img,
+                    caption=cap,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(kb_rows) if kb_rows else None,
+                ))
+
+        if not results:
+            results = [InlineQueryResultArticle(
+                id="sshop_empty",
+                title="🛒 Star-Shop ဗလာ",
+                description="Owner က listing မထည့်ရသေးပါ",
+                input_message_content=InputTextMessageContent("🛒 Star-Shop is empty."),
+            )]
+
+        await update.inline_query.answer(results, next_offset=next_offset, cache_time=5)
+        return
 
     # ── Market gallery ────────────────────────────────────────────────────────
     if _is_market_query:

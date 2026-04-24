@@ -132,6 +132,21 @@ def _fmt_listing_caption(li: dict) -> str:
     return "\n".join(parts)
 
 
+def _cb_chat_id(cq) -> int:
+    """Return a chat_id we can DM/send to even if cq came from inline message."""
+    if cq.message:
+        return cq.message.chat_id
+    return cq.from_user.id
+
+
+async def _cb_send(cq, context, text: str, **kwargs) -> None:
+    """Reply to a callback_query whether it has a message context or is inline."""
+    if cq.message:
+        await cq.message.reply_text(text, **kwargs)
+    else:
+        await context.bot.send_message(cq.from_user.id, text, **kwargs)
+
+
 def _buy_keyboard(li: dict, ton_enabled: bool) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if li.get("star_price"):
@@ -359,12 +374,29 @@ async def starshop_cmd(update: Update, context: CallbackContext) -> None:
 
 async def _send_page(update: Update, context: CallbackContext, page: int, edit: bool) -> None:
     total = await star_market_collection.count_documents({})
+
+    # Top "Star Characters" inline_query button (like /market)
+    sc_btn = InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "🛒  Star Characters",
+            switch_inline_query_current_chat="starshop",
+            style=KeyboardButtonStyle.PRIMARY,
+        ),
+    ]])
+
     if total == 0:
-        msg = "📭 Star-Shop ဗလာ — Owner က မတင်ရသေးပါ။"
+        msg = (
+            "🛒 <b>Star-Shop</b>\n\n"
+            "<i>Owner က listing မထည့်ရသေးပါ။</i>"
+        )
         if edit and update.callback_query:
-            await update.callback_query.edit_message_text(msg)
+            await update.callback_query.edit_message_text(
+                msg, parse_mode=ParseMode.HTML, reply_markup=sc_btn,
+            )
         else:
-            await update.effective_message.reply_text(msg)
+            await update.effective_message.reply_text(
+                msg, parse_mode=ParseMode.HTML, reply_markup=sc_btn,
+            )
         return
 
     pages = max(1, math.ceil(total / _PAGE_SIZE))
@@ -377,6 +409,14 @@ async def _send_page(update: Update, context: CallbackContext, page: int, edit: 
 
     text_lines = [f"🛒 <b>Star-Shop</b>  •  Page {page+1}/{pages}\n"]
     rows: list[list[InlineKeyboardButton]] = []
+
+    # Top inline-query button (open card gallery)
+    rows.append([InlineKeyboardButton(
+        "🛒  Star Characters",
+        switch_inline_query_current_chat="starshop",
+        style=KeyboardButtonStyle.PRIMARY,
+    )])
+
     for li in items:
         c = li["char"]
         bits = []
@@ -522,7 +562,7 @@ async def _start_star_payment(update: Update, context: CallbackContext, oid_str:
     payload = f"sshop:{oid}:{cq.from_user.id}"
 
     await context.bot.send_invoice(
-        chat_id=cq.message.chat_id,
+        chat_id=_cb_chat_id(cq),
         title=title[:32],
         description=desc[:255],
         payload=payload,
@@ -651,10 +691,12 @@ async def _start_ton_payment(update: Update, context: CallbackContext, oid_str: 
         "<i>Memo မထည့်ရင် auto-deliver မဖြစ်ပါ — Owner ထံ ဆက်သွယ်ပါ။</i>"
     )
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📲 Open Wallet", url=deeplink)],
-        [InlineKeyboardButton("✅ Verify Payment", callback_data=f"sshop_verifyton_{order_id}")],
+        [InlineKeyboardButton("📲 Open Wallet", url=deeplink, style=KeyboardButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("✅ Verify Payment", callback_data=f"sshop_verifyton_{order_id}", style=KeyboardButtonStyle.SUCCESS)],
     ])
-    await cq.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    await context.bot.send_message(
+        _cb_chat_id(cq), text, parse_mode=ParseMode.HTML, reply_markup=kb,
+    )
 
 
 async def _verify_ton_payment(update: Update, context: CallbackContext, order_id: str) -> None:
@@ -702,12 +744,12 @@ async def _verify_ton_payment(update: Update, context: CallbackContext, order_id
     except Exception as e:
         LOGGER.warning("Toncenter error: %s", e)
         await _release()
-        await cq.message.reply_text("⚠️ TON network query မအောင်မြင်ပါ — ခဏကြာပြီး ပြန်စမ်းပါ။")
+        await _cb_send(cq, context, "⚠️ TON network query မအောင်မြင်ပါ — ခဏကြာပြီး ပြန်စမ်းပါ။")
         return
 
     if not data.get("ok"):
         await _release()
-        await cq.message.reply_text("⚠️ TON API error — ခဏကြာပြီး ပြန်စမ်းပါ။")
+        await _cb_send(cq, context, "⚠️ TON API error — ခဏကြာပြီး ပြန်စမ်းပါ။")
         return
 
     found_tx = None
@@ -729,7 +771,7 @@ async def _verify_ton_payment(update: Update, context: CallbackContext, order_id
 
     if not found_tx:
         await _release()
-        await cq.message.reply_text(
+        await _cb_send(cq, context,
             "⏳ Payment မတွေ့သေးပါ။\n\n"
             "TON network confirm ဖို့ ၁-၂ မိနစ် ကြာတတ်ပါသည်။\n"
             "ခဏကြာပြီး <b>Verify Payment</b> ပြန်နှိပ်ပါ။",
@@ -744,7 +786,7 @@ async def _verify_ton_payment(update: Update, context: CallbackContext, order_id
             {"_id": oid},
             {"$set": {"status": "stale_paid", "tx_hash": (found_tx.get("transaction_id") or {}).get("hash")}},
         )
-        await cq.message.reply_text(
+        await _cb_send(cq, context,
             "⚠️ Listing သည် ရောင်းပြီးသွားပြီ — Owner ထံ TON refund အကြောင်း အကြောင်းကြားပြီ။"
         )
         try:
@@ -778,7 +820,7 @@ async def _verify_ton_payment(update: Update, context: CallbackContext, order_id
         {"$set": {"status": "paid", "tx_hash": found_tx.get("transaction_id", {}).get("hash")}},
     )
 
-    await cq.message.reply_text(
+    await _cb_send(cq, context,
         f"🎉 <b>TON Payment Verified!</b>\n\n"
         f"<b>{escape(char.get('name','?'))}</b> ({escape(char.get('rarity','?'))}) "
         f"ကို <code>/harem</code> တွင် တွေ့နိုင်ပြီ။",
