@@ -375,8 +375,8 @@ async def starshop_cmd(update: Update, context: CallbackContext) -> None:
 async def _send_page(update: Update, context: CallbackContext, page: int, edit: bool) -> None:
     total = await star_market_collection.count_documents({})
 
-    # Top "Star Characters" inline_query button (like /market)
-    sc_btn = InlineKeyboardMarkup([[
+    # Single "Star Characters" inline_query button — opens card gallery
+    kb = InlineKeyboardMarkup([[
         InlineKeyboardButton(
             "🛒  Star Characters",
             switch_inline_query_current_chat="starshop",
@@ -385,76 +385,29 @@ async def _send_page(update: Update, context: CallbackContext, page: int, edit: 
     ]])
 
     if total == 0:
-        msg = (
+        text = (
             "🛒 <b>Star-Shop</b>\n\n"
             "<i>Owner က listing မထည့်ရသေးပါ။</i>"
         )
-        if edit and update.callback_query:
-            await update.callback_query.edit_message_text(
-                msg, parse_mode=ParseMode.HTML, reply_markup=sc_btn,
-            )
-        else:
-            await update.effective_message.reply_text(
-                msg, parse_mode=ParseMode.HTML, reply_markup=sc_btn,
-            )
-        return
-
-    pages = max(1, math.ceil(total / _PAGE_SIZE))
-    page  = max(0, min(page, pages - 1))
-    items = await (
-        star_market_collection.find({})
-        .sort("listed_at", -1).skip(page * _PAGE_SIZE).limit(_PAGE_SIZE)
-        .to_list(_PAGE_SIZE)
-    )
-
-    text_lines = [f"🛒 <b>Star-Shop</b>  •  Page {page+1}/{pages}\n"]
-    rows: list[list[InlineKeyboardButton]] = []
-
-    # Top inline-query button (open card gallery)
-    rows.append([InlineKeyboardButton(
-        "🛒  Star Characters",
-        switch_inline_query_current_chat="starshop",
-        style=KeyboardButtonStyle.PRIMARY,
-    )])
-
-    for li in items:
-        c = li["char"]
-        bits = []
-        if li.get("star_price"): bits.append(f"⭐{li['star_price']}")
-        if li.get("ton_price"):  bits.append(f"💎{li['ton_price']:g}")
-        label = f"{c.get('name','?')[:18]} — {' / '.join(bits) or '—'}"
-        rows.append([InlineKeyboardButton(
-            label, callback_data=f"sshop_view_{li['_id']}",
-            style=KeyboardButtonStyle.PRIMARY,
-        )])
-
-    nav: list[InlineKeyboardButton] = []
-    if page > 0:
-        nav.append(InlineKeyboardButton(
-            "⬅️", callback_data=f"sshop_page_{page-1}",
-            style=KeyboardButtonStyle.DANGER,
-        ))
-    nav.append(InlineKeyboardButton(
-        f"{page+1}/{pages}", callback_data="sshop_noop",
-        style=KeyboardButtonStyle.SUCCESS,
-    ))
-    if page < pages - 1:
-        nav.append(InlineKeyboardButton(
-            "➡️", callback_data=f"sshop_page_{page+1}",
-            style=KeyboardButtonStyle.PRIMARY,
-        ))
-    rows.append(nav)
-
-    text = "\n".join(text_lines + ["Tap a card to view details ↓"])
-    kb   = InlineKeyboardMarkup(rows)
+    else:
+        text = (
+            f"🛒 <b>Star-Shop</b>  •  {total} listing{'s' if total != 1 else ''}\n\n"
+            "<i>အောက်က button ကို နှိပ်ပြီး character cards ကို ကြည့်ပါ</i>"
+        )
 
     if edit and update.callback_query:
         try:
-            await update.callback_query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+            await update.callback_query.edit_message_text(
+                text, parse_mode=ParseMode.HTML, reply_markup=kb,
+            )
         except Exception:
-            await update.callback_query.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+            await update.callback_query.message.reply_text(
+                text, parse_mode=ParseMode.HTML, reply_markup=kb,
+            )
     else:
-        await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        await update.effective_message.reply_text(
+            text, parse_mode=ParseMode.HTML, reply_markup=kb,
+        )
 
 
 # ── Callback router ───────────────────────────────────────────────────────────
