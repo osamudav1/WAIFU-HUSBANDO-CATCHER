@@ -38,7 +38,7 @@ from telegram import (
     LabeledPrice,
     Update,
 )
-from telegram.constants import ChatType, ParseMode
+from telegram.constants import ChatType, KeyboardButtonStyle, ParseMode
 from telegram.ext import (
     CallbackContext,
     CallbackQueryHandler,
@@ -67,8 +67,26 @@ _PAGE_SIZE        = 6
 _TON_API          = "https://toncenter.com/api/v2/getTransactions"
 _TON_DECIMALS     = 1_000_000_000        # 1 TON = 1e9 nano
 _TON_TX_TOLERANCE = 0.001                # ±0.001 TON acceptance
+_DEFAULT_RATE     = 500                  # 1 TON ≈ 500 stars (owner can change /setrate)
 
 OWNER_TON_WALLET_ENV = os.environ.get("OWNER_TON_WALLET", "").strip()
+
+
+# ── Settings (DB-backed) ──────────────────────────────────────────────────────
+
+async def _get_stars_per_ton() -> int:
+    doc = await bot_settings_collection.find_one({"_id": "stars_per_ton"})
+    if doc and isinstance(doc.get("value"), (int, float)) and doc["value"] > 0:
+        return int(doc["value"])
+    return _DEFAULT_RATE
+
+
+async def _set_stars_per_ton(rate: int) -> None:
+    await bot_settings_collection.find_one_and_update(
+        {"_id": "stars_per_ton"},
+        {"$set": {"value": int(rate)}},
+        upsert=True,
+    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -120,14 +138,63 @@ def _buy_keyboard(li: dict, ton_enabled: bool) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(
             f"⭐  Buy: {li['star_price']} Stars",
             callback_data=f"sshop_buystar_{li['_id']}",
+            style=KeyboardButtonStyle.SUCCESS,
         )])
     if ton_enabled and li.get("ton_price"):
         rows.append([InlineKeyboardButton(
             f"💎  Buy: {li['ton_price']:g} TON",
             callback_data=f"sshop_buyton_{li['_id']}",
+            style=KeyboardButtonStyle.PRIMARY,
         )])
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="sshop_page_0")])
+    rows.append([InlineKeyboardButton(
+        "⬅️ Back", callback_data="sshop_page_0",
+        style=KeyboardButtonStyle.DANGER,
+    )])
     return InlineKeyboardMarkup(rows)
+
+
+# ── Owner Panel ───────────────────────────────────────────────────────────────
+
+async def _show_owner_panel(update: Update) -> None:
+    wallet = await _get_ton_wallet()
+    rate   = await _get_stars_per_ton()
+    total  = await star_market_collection.count_documents({})
+
+    text = (
+        "👑 <b>Star-Shop Owner Panel</b>\n\n"
+        f"💎 TON Wallet: <code>{escape(wallet) if wallet else '— မချိတ်ရသေး —'}</code>\n"
+        f"⚙️ Conversion: <b>{rate}</b> ⭐ = 1 💎 TON\n"
+        f"📋 Live Listings: <b>{total}</b>\n\n"
+        "<b>Commands:</b>\n"
+        "<code>/star &lt;char_id&gt; &lt;stars&gt; [ton]</code>  — list a character\n"
+        "<code>/delstar &lt;listing_id&gt;</code>  — remove\n"
+        "<code>/starlist</code>  — view all listings\n"
+        "<code>/setton &lt;wallet&gt;</code>  — set TON wallet\n"
+        "<code>/setrate &lt;stars_per_ton&gt;</code>  — change conversion rate\n"
+    )
+    rows: list[list[InlineKeyboardButton]] = []
+    if not wallet:
+        rows.append([InlineKeyboardButton(
+            "🔗  Connect TON Wallet",
+            callback_data="sshop_owner_connect",
+            style=KeyboardButtonStyle.PRIMARY,
+        )])
+    else:
+        rows.append([InlineKeyboardButton(
+            "🔄  Change TON Wallet",
+            callback_data="sshop_owner_connect",
+            style=KeyboardButtonStyle.PRIMARY,
+        )])
+    rows.append([
+        InlineKeyboardButton("📋 Listings", callback_data="sshop_owner_listings",
+                             style=KeyboardButtonStyle.SUCCESS),
+        InlineKeyboardButton("🛒 Open Shop", callback_data="sshop_page_0",
+                             style=KeyboardButtonStyle.PRIMARY),
+    ])
+    await update.message.reply_text(
+        text, parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
 
 
 # ── /star — owner adds a listing ──────────────────────────────────────────────
@@ -141,11 +208,17 @@ async def star_cmd(update: Update, context: CallbackContext) -> None:
         return
 
     args = context.args or []
+
+    # No args → show owner welcome panel
+    if not args:
+        await _show_owner_panel(update)
+        return
+
     if len(args) < 2:
         await update.message.reply_text(
             "Usage:\n<code>/star &lt;char_id&gt; &lt;star_amount&gt; [ton_amount]</code>\n\n"
-            "Example:\n<code>/star 42 50</code>  →  50 Stars\n"
-            "<code>/star 42 50 0.5</code>  →  50 Stars or 0.5 TON",
+            "Example:\n<code>/star 42 50</code>  →  50 Stars (TON auto-calculated)\n"
+            "<code>/star 42 50 0.5</code>  →  50 Stars or 0.5 TON (manual)",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -153,7 +226,7 @@ async def star_cmd(update: Update, context: CallbackContext) -> None:
     char_id_raw = args[0].lstrip("0") or args[0]
     try:
         star_price = int(args[1])
-        ton_price  = float(args[2]) if len(args) >= 3 else 0.0
+        ton_price  = float(args[2]) if len(args) >= 3 else None     # None = auto
     except ValueError:
         await update.message.reply_text("❌ Star/TON amount သည် နံပါတ် ဖြစ်ရမည်။")
         return
@@ -161,6 +234,12 @@ async def star_cmd(update: Update, context: CallbackContext) -> None:
     if star_price < 1:
         await update.message.reply_text("❌ Star amount ≥ 1 ဖြစ်ရမည်။")
         return
+
+    # Auto-calc TON from Stars if not provided
+    if ton_price is None:
+        rate = await _get_stars_per_ton()
+        ton_price = round(star_price / rate, 4)
+
     if ton_price < 0:
         await update.message.reply_text("❌ TON amount ≥ 0 ဖြစ်ရမည်။")
         return
@@ -304,14 +383,26 @@ async def _send_page(update: Update, context: CallbackContext, page: int, edit: 
         if li.get("star_price"): bits.append(f"⭐{li['star_price']}")
         if li.get("ton_price"):  bits.append(f"💎{li['ton_price']:g}")
         label = f"{c.get('name','?')[:18]} — {' / '.join(bits) or '—'}"
-        rows.append([InlineKeyboardButton(label, callback_data=f"sshop_view_{li['_id']}")])
+        rows.append([InlineKeyboardButton(
+            label, callback_data=f"sshop_view_{li['_id']}",
+            style=KeyboardButtonStyle.PRIMARY,
+        )])
 
     nav: list[InlineKeyboardButton] = []
     if page > 0:
-        nav.append(InlineKeyboardButton("⬅️", callback_data=f"sshop_page_{page-1}"))
-    nav.append(InlineKeyboardButton(f"{page+1}/{pages}", callback_data="sshop_noop"))
+        nav.append(InlineKeyboardButton(
+            "⬅️", callback_data=f"sshop_page_{page-1}",
+            style=KeyboardButtonStyle.DANGER,
+        ))
+    nav.append(InlineKeyboardButton(
+        f"{page+1}/{pages}", callback_data="sshop_noop",
+        style=KeyboardButtonStyle.SUCCESS,
+    ))
     if page < pages - 1:
-        nav.append(InlineKeyboardButton("➡️", callback_data=f"sshop_page_{page+1}"))
+        nav.append(InlineKeyboardButton(
+            "➡️", callback_data=f"sshop_page_{page+1}",
+            style=KeyboardButtonStyle.PRIMARY,
+        ))
     rows.append(nav)
 
     text = "\n".join(text_lines + ["Tap a card to view details ↓"])
@@ -334,6 +425,38 @@ async def starshop_cb(update: Update, context: CallbackContext) -> None:
     await cq.answer()
 
     if data == "sshop_noop":
+        return
+
+    if data == "sshop_owner_connect":
+        if not _is_owner(cq.from_user.id):
+            return
+        await cq.message.reply_text(
+            "🔗 <b>Connect TON Wallet</b>\n\n"
+            "မင်းရဲ့ TON wallet address ကို အောက်ပါ command နဲ့ ပို့ပါ:\n\n"
+            "<code>/setton EQAbcd...xyz</code>\n\n"
+            "<i>Tonkeeper / @wallet စသည့် TON wallet app ထဲက address ကို copy ထည့်ပါ။</i>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    if data == "sshop_owner_listings":
+        if not _is_owner(cq.from_user.id):
+            return
+        items = await star_market_collection.find({}).sort("listed_at", -1).to_list(50)
+        if not items:
+            await cq.message.reply_text("📭 Star-Shop ဗလာ။")
+            return
+        lines = [f"📋 <b>Listings ({len(items)})</b>\n"]
+        for li in items:
+            c = li["char"]
+            bits = []
+            if li.get("star_price"): bits.append(f"⭐{li['star_price']}")
+            if li.get("ton_price"):  bits.append(f"💎{li['ton_price']:g}")
+            lines.append(
+                f"• <code>{li['_id']}</code> — {escape(c.get('name','?'))} "
+                f"({escape(c.get('rarity','?'))}) — {' / '.join(bits)}"
+            )
+        await cq.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
         return
 
     if data.startswith("sshop_page_"):
@@ -676,10 +799,39 @@ async def _verify_ton_payment(update: Update, context: CallbackContext, order_id
 
 # ── Handler registration ──────────────────────────────────────────────────────
 
+async def setrate_cmd(update: Update, context: CallbackContext) -> None:
+    uid = update.effective_user.id
+    if not _is_owner(uid) or not _dm_only(update):
+        return
+    args = context.args or []
+    if not args:
+        cur = await _get_stars_per_ton()
+        await update.message.reply_text(
+            f"⚙️ Current rate: <b>{cur}</b> ⭐ = 1 💎 TON\n\n"
+            "Change with: <code>/setrate &lt;stars_per_ton&gt;</code>\n"
+            "Example: <code>/setrate 500</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    try:
+        rate = int(args[0])
+        if rate < 1:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text("❌ Rate သည် positive integer ဖြစ်ရမည်။")
+        return
+    await _set_stars_per_ton(rate)
+    await update.message.reply_text(
+        f"✅ Conversion rate ပြောင်းပြီးပြီ: <b>{rate}</b> ⭐ = 1 💎 TON",
+        parse_mode=ParseMode.HTML,
+    )
+
+
 application.add_handler(CommandHandler("star",      star_cmd,     block=False))
 application.add_handler(CommandHandler("delstar",   delstar_cmd,  block=False))
 application.add_handler(CommandHandler("starlist",  starlist_cmd, block=False))
 application.add_handler(CommandHandler("setton",    setton_cmd,   block=False))
+application.add_handler(CommandHandler("setrate",   setrate_cmd,  block=False))
 application.add_handler(CommandHandler("starshop",  starshop_cmd, block=False))
 
 application.add_handler(CallbackQueryHandler(starshop_cb,    pattern=r"^sshop_", block=False))
