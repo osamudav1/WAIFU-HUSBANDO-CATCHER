@@ -37,10 +37,10 @@ PHOTO_URL        = Config.PHOTO_URL
 SUPPORT_CHAT     = Config.SUPPORT_CHAT
 UPDATE_CHAT      = Config.UPDATE_CHAT
 
-from waifu.memdb import MemDatabase
+from motor.motor_asyncio import AsyncIOMotorClient
 
-db = MemDatabase()
-LOGGER.info("Using in-memory storage (data resets on restart).")
+_mongo = AsyncIOMotorClient(Config.mongo_url)
+db     = _mongo[Config.DB_NAME]
 
 collection                   = db["anime_characters"]
 user_collection              = db["users"]
