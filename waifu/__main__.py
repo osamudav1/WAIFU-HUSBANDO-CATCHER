@@ -58,6 +58,7 @@ async def _post_init(application) -> None:
 def main() -> None:
     from waifu.config import Config
     Config.validate()
+    LOGGER.info("Using Token: %s***", Config.TOKEN[:5])
     LOGGER.info("Loading %d module(s)…", len(ALL_MODULES))
     for name in ALL_MODULES:
         try:
