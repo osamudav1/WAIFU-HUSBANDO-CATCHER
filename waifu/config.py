@@ -60,7 +60,7 @@ class Config:
     OWNER_ID:         int       = int(os.environ.get("OWNER_ID",     "0").strip() or "0")
     GROUP_ID:         int       = int(os.environ.get("GROUP_ID",     "0").strip() or "0")
     CHARA_CHANNEL_ID: int       = int(os.environ.get("CHARA_CHANNEL_ID", "0").strip() or "0")
-    mongo_url:        str       = os.environ.get("MONGO_URI",        "").strip()
+    mongo_url:        str       = os.environ.get("MONGO_URI",        "").strip()  # optional — in-memory used if blank
 
     # ── Optional secrets / settings ─────────────────────────────────────────
     BOT_USERNAME:     str       = os.environ.get("BOT_USERNAME",     "").strip().lstrip("@")
@@ -108,7 +108,7 @@ class Config:
         if not cls.OWNER_ID:         missing.append("OWNER_ID")
         if not cls.GROUP_ID:         missing.append("GROUP_ID")
         if not cls.CHARA_CHANNEL_ID: missing.append("CHARA_CHANNEL_ID")
-        if not cls.mongo_url:        missing.append("MONGO_URI")
+        # MONGO_URI is optional — in-memory storage is used when not set
         if missing:
             raise RuntimeError(
                 f"[Config] Missing required secrets: {', '.join(missing)}\n"

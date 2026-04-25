@@ -18,7 +18,7 @@ logging.basicConfig(
     ],
     level=logging.INFO,
 )
-for _lib in ("apscheduler", "httpx", "telegram.ext", "pymongo"):
+for _lib in ("apscheduler", "httpx", "telegram.ext", "pymongo", "motor"):
     logging.getLogger(_lib).setLevel(logging.WARNING)
 
 LOGGER    = logging.getLogger("waifu")
@@ -37,10 +37,10 @@ PHOTO_URL        = Config.PHOTO_URL
 SUPPORT_CHAT     = Config.SUPPORT_CHAT
 UPDATE_CHAT      = Config.UPDATE_CHAT
 
-from motor.motor_asyncio import AsyncIOMotorClient
+from waifu.memdb import MemDatabase
 
-_mongo = AsyncIOMotorClient(Config.mongo_url)
-db     = _mongo[Config.DB_NAME]
+db = MemDatabase()
+LOGGER.info("Using in-memory storage (data resets on restart).")
 
 collection                   = db["anime_characters"]
 user_collection              = db["users"]
