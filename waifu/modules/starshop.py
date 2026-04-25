@@ -645,26 +645,22 @@ async def _start_ton_payment(update: Update, context: CallbackContext, oid_str: 
     order_id = str(res.inserted_id)
 
     # Use https:// links — ton:// scheme is blocked in Telegram URL buttons
-    tonkeeper_url = (
+    pay_url = (
         f"https://app.tonkeeper.com/transfer/{wallet}"
         f"?amount={ton_nano}&text={memo}"
     )
-    twallet_url = "https://t.me/wallet"
     text = (
         "💎 <b>TON Payment</b>\n\n"
         f"Amount: <b>{ton_price:g} TON</b>\n"
         f"To wallet: <code>{escape(wallet)}</code>\n"
         f"Memo (REQUIRED): <code>{memo}</code>\n\n"
-        "1. အောက်က button တစ်ခုနှိပ်ပါ (Tonkeeper သို့မဟုတ် @wallet)\n"
+        "1. <b>Pay with Tonkeeper</b> နှိပ်ပါ\n"
         "2. Exact amount + memo ထည့်ပြီး ငွေလွှဲပါ\n"
         "3. <b>Verify Payment</b> နှိပ်ပါ\n\n"
         "<i>Memo မထည့်ရင် auto-deliver မဖြစ်ပါ — Owner ထံ ဆက်သွယ်ပါ။</i>"
     )
     kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("💎 Tonkeeper", url=tonkeeper_url),
-            InlineKeyboardButton("👛 @wallet",   url=twallet_url),
-        ],
+        [InlineKeyboardButton("💎 Pay with Tonkeeper", url=pay_url)],
         [InlineKeyboardButton("✅ Verify Payment", callback_data=f"sshop_verifyton_{order_id}", style=KeyboardButtonStyle.SUCCESS)],
     ])
     await context.bot.send_message(
