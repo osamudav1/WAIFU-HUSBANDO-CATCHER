@@ -6,7 +6,7 @@ Mode selection (automatic):
   - Fly.io          → FLY_APP_NAME is set    → polling + health server on PORT
   - Koyeb           → KOYEB_APP_NAME is set  → polling + health server on PORT
   - Hugging Face    → SPACE_ID is set        → polling + health server on 7860
-  - Render          → RENDER=true            → polling (worker; no health server)
+  - Render          → RENDER=true            → polling + health server on PORT (default 10000)
   - Replit VM       → REPLIT_DEPLOYMENT=1    → webhook mode (no Conflict)
   - Dev / local     → polling mode (no health server)
 """
@@ -127,8 +127,11 @@ def main() -> None:
         application.run_polling(**_POLLING_KWARGS, bootstrap_retries=-1)
 
     elif is_render:
-        # ── Render worker: plain polling (no HTTP port needed for workers) ─────
-        LOGGER.info("Render mode: polling…")
+        # ── Render: health server + polling ───────────────────────────────────
+        port = int(os.environ.get("PORT", "10000"))
+        t = threading.Thread(target=_run_health_server, args=(port,), daemon=True)
+        t.start()
+        LOGGER.info("Render mode: polling + health server on port %d", port)
         application.run_polling(**_POLLING_KWARGS)
 
     elif is_deployed:
