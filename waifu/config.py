@@ -1,7 +1,18 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# Only load .env in local dev — never override real environment variables.
+# On HuggingFace (SPACE_ID), Replit deployed (REPLIT_DEPLOYMENT), Fly, Koyeb,
+# Render — secrets come from the platform's os.environ already.
+_is_deployed = any(os.environ.get(k) for k in (
+    "SPACE_ID",           # HuggingFace
+    "REPLIT_DOMAINS",     # Replit (dev + deployed)
+    "FLY_APP_NAME",       # Fly.io
+    "KOYEB_APP_NAME",     # Koyeb
+    "RENDER",             # Render
+))
+if not _is_deployed:
+    load_dotenv(override=False)   # local dev only; never overrides real secrets
 
 
 def _req(key: str) -> str:

@@ -47,6 +47,12 @@ async def _post_init(application) -> None:
     await _migrate_indexes()
     await create_indexes()
     LOGGER.info("DB indexes ensured.")
+    # Always clear any leftover webhook so polling gets all updates
+    try:
+        await application.bot.delete_webhook(drop_pending_updates=False)
+        LOGGER.info("Webhook cleared — polling will receive all updates.")
+    except Exception as e:
+        LOGGER.warning("Could not clear webhook: %s", e)
 
 
 def main() -> None:
