@@ -67,7 +67,7 @@ _PAGE_SIZE        = 6
 _TON_API          = "https://toncenter.com/api/v2/getTransactions"
 _TON_DECIMALS     = 1_000_000_000        # 1 TON = 1e9 nano
 _TON_TX_TOLERANCE = 0.001                # ±0.001 TON acceptance
-_DEFAULT_RATE     = 500                  # 1 TON ≈ 500 stars (owner can change /setrate)
+_DEFAULT_RATE     = 91                   # 91 stars = 1 TON  →  50 stars ≈ 0.55 TON (owner can change /setrate)
 
 OWNER_TON_WALLET_ENV = os.environ.get("OWNER_TON_WALLET", "").strip()
 
