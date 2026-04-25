@@ -103,7 +103,7 @@ def main() -> None:
         t = threading.Thread(target=_run_health_server, args=(port,), daemon=True)
         t.start()
         LOGGER.info("Hugging Face Spaces mode: polling + health server on port %d", port)
-        application.run_polling(**_POLLING_KWARGS)
+        application.run_polling(**_POLLING_KWARGS, bootstrap_retries=-1)
 
     elif is_render:
         # ── Render worker: plain polling (no HTTP port needed for workers) ─────

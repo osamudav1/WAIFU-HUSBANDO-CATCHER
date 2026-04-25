@@ -57,10 +57,20 @@ bot_settings_collection      = db["bot_settings"]
 waifu_collection             = collection
 
 from telegram.ext import Application
+from telegram.request import HTTPXRequest
+
+_request = HTTPXRequest(
+    connect_timeout=30,
+    read_timeout=30,
+    write_timeout=30,
+    pool_timeout=30,
+    http_version="1.1",
+)
 
 application: Application = (
     Application.builder()
     .token(TOKEN)
+    .request(_request)
     .concurrent_updates(True)
     .build()
 )
