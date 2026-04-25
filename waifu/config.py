@@ -18,7 +18,7 @@ def _int_list(key: str) -> list[int]:
 
 class Config:
     TOKEN:            str       = _req("BOT_TOKEN")
-    BOT_USERNAME:     str       = _req("BOT_USERNAME")
+    BOT_USERNAME:     str       = os.environ.get("BOT_USERNAME", "").strip().lstrip("@")
     OWNER_ID:         int       = int(_req("OWNER_ID"))
     sudo_users:       list[int] = _int_list("SUDO_IDS")
     GROUP_ID:         int       = int(_req("GROUP_ID"))

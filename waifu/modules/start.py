@@ -110,8 +110,10 @@ def _main_kb(uid: int | None = None) -> InlineKeyboardMarkup:
         if uid else
         InlineKeyboardButton("🔱 My Waifus", callback_data="act:harem", style=KeyboardButtonStyle.PRIMARY)
     )
-    rows = [
-        [InlineKeyboardButton("➕ Add Me to Group", url=f"https://t.me/{BOT_USERNAME}?startgroup=new", style=KeyboardButtonStyle.SUCCESS)],
+    rows = []
+    if BOT_USERNAME:
+        rows.append([InlineKeyboardButton("➕ Add Me to Group", url=f"https://t.me/{BOT_USERNAME}?startgroup=new", style=KeyboardButtonStyle.SUCCESS)])
+    rows += [
         [
             InlineKeyboardButton("👥 Group", url="https://t.me/waifucharactersos", style=KeyboardButtonStyle.PRIMARY),
             InlineKeyboardButton("📢 Updates", url="https://t.me/+py0voloZgOQ5NGU1", style=KeyboardButtonStyle.PRIMARY),
@@ -141,8 +143,10 @@ def _owner_kb(uid: int | None = None) -> InlineKeyboardMarkup:
         if uid else
         InlineKeyboardButton("🔱 My Waifus", callback_data="act:harem", style=KeyboardButtonStyle.PRIMARY)
     )
-    rows = [
-        [InlineKeyboardButton("➕ Add Me to Group", url=f"https://t.me/{BOT_USERNAME}?startgroup=new", style=KeyboardButtonStyle.SUCCESS)],
+    rows = []
+    if BOT_USERNAME:
+        rows.append([InlineKeyboardButton("➕ Add Me to Group", url=f"https://t.me/{BOT_USERNAME}?startgroup=new", style=KeyboardButtonStyle.SUCCESS)])
+    rows += [
         [
             InlineKeyboardButton("👥 Group", url="https://t.me/waifucharactersos", style=KeyboardButtonStyle.PRIMARY),
             InlineKeyboardButton("📢 Updates", url="https://t.me/+py0voloZgOQ5NGU1", style=KeyboardButtonStyle.PRIMARY),
