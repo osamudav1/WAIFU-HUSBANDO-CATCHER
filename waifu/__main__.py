@@ -15,7 +15,18 @@ import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+from telegram.error import NetworkError, TimedOut
+
 from waifu import ALL_MODULES, LOGGER
+
+
+async def _error_handler(update, context) -> None:
+    """Silently swallow transient network errors; log the rest."""
+    err = context.error
+    if isinstance(err, (TimedOut, NetworkError)):
+        LOGGER.warning("Transient network error (ignored): %s", err)
+        return
+    LOGGER.error("Unhandled exception", exc_info=err)
 
 
 def _run_health_server(port: int = 8080) -> None:
@@ -71,6 +82,7 @@ def main() -> None:
 
     from waifu import application
     application.post_init = _post_init
+    application.add_error_handler(_error_handler)
 
     _ALLOWED_UPDATES = [
         "message", "edited_message", "callback_query",

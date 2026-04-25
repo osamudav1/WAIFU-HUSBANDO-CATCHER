@@ -60,10 +60,10 @@ from telegram.ext import Application
 from telegram.request import HTTPXRequest
 
 _request = HTTPXRequest(
-    connect_timeout=30,
-    read_timeout=30,
-    write_timeout=30,
-    pool_timeout=30,
+    connect_timeout=60,
+    read_timeout=60,
+    write_timeout=60,
+    pool_timeout=60,
     http_version="1.1",
 )
 
