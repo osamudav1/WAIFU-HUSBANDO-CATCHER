@@ -50,10 +50,10 @@ _mm_last_drop:    dict[int, float] = {}   # chat_id → timestamp of last drop
 _mm_unique_users: dict[int, dict]  = {}   # chat_id → {user_id: last_msg_ts}
 
 _MM_MSG_THRESHOLD = 2000    # messages needed to trigger a drop
-_MM_COOLDOWN_SECS = 5       # seconds between consecutive drops
+_MM_COOLDOWN_SECS = 0       # no cooldown between drops
 _MM_MIN_MEMBERS   = 3000    # minimum group member count
 _MM_MIN_ACTIVE    = 200     # minimum unique active users (last 1 hour)
-_MM_EXPIRE_SECS   = 60      # seconds before drop card expires
+_MM_EXPIRE_SECS   = 15      # seconds before drop card expires
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -127,13 +127,12 @@ async def _send_page(update: Update, context: CallbackContext, page: int) -> Non
         sold   = li.get("sold_count", 0)
         img    = li.get("img_url",    "")
 
-        stock = "♾️ Unlimited" if copies == 0 else f"{copies - sold} / {copies} ကျန်"
         cap = (
             f"🌸 <b>{escape(name)}</b>\n"
             f"📺 {escape(anime)}\n"
-            f"💎 {escape(rarity)}\n\n"
-            f"💵 Price: <b>{price:,} MMK</b>\n"
-            f"📦 Stock: {stock}"
+            f"💎 {escape(rarity)}\n"
+            f"🎴 Card Type: <b>MMK</b>\n\n"
+            f"💵 Price: <b>${price:,}</b>"
         )
         kb = InlineKeyboardMarkup([[
             InlineKeyboardButton("💳 To Buy", callback_data=f"mm_buy_{lid}"),
@@ -258,7 +257,7 @@ async def mmshop_cmd(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text(
         f"✅ <b>MMK Shop တင်ပြီးပါပြီ!</b>\n\n"
         f"🌸 {escape(char.get('name', ''))}\n"
-        f"💵 {mmk_price:,} MMK\n"
+        f"💵 ${mmk_price:,}\n"
         f"📦 Copies: {copies_txt}\n"
         f"🆔 Listing: <code>{lid}</code>",
         parse_mode=ParseMode.HTML,
@@ -330,14 +329,13 @@ async def _cb_buy(cq, context: CallbackContext, listing_id: str) -> None:
     if not kpay and not wave:
         await cq.answer("⚠️ Owner က ဖုန်းနံပါတ် မသတ်မှတ်ရသေး။", show_alert=True); return
 
-    stock_txt = "♾️ Unlimited" if copies == 0 else f"{copies - sold} ကျန်"
     cap = (
         f"🛍️ <b>MMK Shop — Purchase</b>\n\n"
         f"🌸 <b>{escape(li.get('char_name',''))}</b>\n"
         f"📺 {escape(li.get('char_anime',''))}\n"
-        f"💎 {escape(li.get('char_rarity',''))}\n\n"
-        f"💵 Price: <b>{li['mmk_price']:,} MMK</b>\n"
-        f"📦 Stock: {stock_txt}\n\n"
+        f"💎 {escape(li.get('char_rarity',''))}\n"
+        f"🎴 Card Type: <b>MMK</b>\n\n"
+        f"💵 Price: <b>${li['mmk_price']:,}</b>\n\n"
         "Payment method ရွေးပါ:"
     )
     btns = []
@@ -401,7 +399,7 @@ async def _cb_pay(cq, context: CallbackContext, pay_type: str, listing_id: str) 
         uid,
         f"{emoji} <b>{pay_type.upper()} ဖုန်းနံပါတ်:</b>\n"
         f"<code>{phone}</code>\n\n"
-        f"💵 ငွေပမာဏ: <b>{li['mmk_price']:,} MMK</b>\n\n"
+        f"💵 ငွေပမာဏ: <b>${li['mmk_price']:,}</b>\n\n"
         f"ငွေလွှဲပြီးရင် <b>ပြေစာ screenshot ဓာတ်ပုံ</b>\n"
         f"ဒီ chat မှာ သာ ပို့ပါ — Owner confirm ရင် card ရောက်မည်။",
         parse_mode=ParseMode.HTML,
@@ -447,7 +445,8 @@ async def _receipt_handler(update: Update, context: CallbackContext) -> None:
         f"🛍️ <b>MMK Purchase — ပြေစာ ရောက်ပြီ</b>\n\n"
         f"👤 Buyer: {uname} (<code>{uid}</code>)\n"
         f"🌸 Card: <b>{escape(char_name)}</b>\n"
-        f"💵 Price: <b>{mmk_price:,} MMK</b>\n"
+        f"🎴 Card Type: <b>MMK</b>\n"
+        f"💵 Price: <b>${mmk_price:,}</b>\n"
         f"{emoji} Payment: {pay_type.upper()}\n\n"
         f"📄 ပြေစာ အောက်မှာပါသည် — Confirm/Cancel နှိပ်ပါ:"
     )
@@ -508,7 +507,7 @@ async def _cb_confirm(cq, context: CallbackContext, order_id: str) -> None:
     buyer_txt = (
         f"🎉 <b>ဝယ်ယူမှု အတည်ပြုပြီးပါပြီ!</b>\n\n"
         f"🌸 <b>{escape(char_name)}</b> ကဒ် ရပြီပါပြီ!\n"
-        f"💵 {mmk_price:,} MMK ပေးချေပြီးပါပြီ — ကျေးဇူးတင်ပါသည်!"
+        f"💵 ${mmk_price:,} ပေးချေပြီးပါပြီ — ကျေးဇူးတင်ပါသည်!"
     )
     try:
         if img_url:
@@ -579,7 +578,7 @@ async def _cb_owner_listings(cq, context: CallbackContext) -> None:
         flag   = "✅" if not li.get("sold_out") else "❌"
         lines.append(
             f"{flag} <b>{escape(li.get('char_name','?'))}</b> — "
-            f"{li.get('mmk_price',0):,} MMK — {stock} sold\n"
+            f"${li.get('mmk_price',0):,} — {stock} sold\n"
             f"   <code>/mmremove {li['_id']}</code>"
         )
     await context.bot.send_message(
@@ -694,17 +693,13 @@ async def _send_mm_drop(chat_id: int, bot) -> None:
     _mm_active_drop[chat_id] = li
     _mm_last_drop[chat_id]   = time.time()
 
-    copies = li.get("copies", 0)
-    sold   = li.get("sold_count", 0)
-    stock  = "♾️ Unlimited" if copies == 0 else f"{copies - sold} ကျန်"
-
     cap = (
         f"💰 <b>MMK Special Drop!</b>\n\n"
         f"🌸 <b>{escape(li.get('char_name', ''))}</b>\n"
         f"📺 {escape(li.get('char_anime', ''))}\n"
-        f"💎 {escape(li.get('char_rarity', ''))}\n\n"
-        f"💵 Price: <b>{li.get('mmk_price', 0):,} MMK</b>\n"
-        f"📦 Stock: {stock}\n\n"
+        f"💎 {escape(li.get('char_rarity', ''))}\n"
+        f"🎴 Card Type: <b>MMK</b>\n\n"
+        f"💵 Price: <b>${li.get('mmk_price', 0):,}</b>\n\n"
         f"⏰ {_MM_EXPIRE_SECS} seconds ထဲ DM to Buy!"
     )
     kb = InlineKeyboardMarkup([[
