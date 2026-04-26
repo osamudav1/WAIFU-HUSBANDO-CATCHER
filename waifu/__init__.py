@@ -38,22 +38,30 @@ SUPPORT_CHAT     = Config.SUPPORT_CHAT
 UPDATE_CHAT      = Config.UPDATE_CHAT
 
 from motor.motor_asyncio import AsyncIOMotorClient
+from waifu.memdb import FallbackCollection
 
-_mongo = AsyncIOMotorClient(Config.mongo_url)
-db     = _mongo[Config.DB_NAME]
+_mongo  = AsyncIOMotorClient(Config.mongo_url)
+_mdb    = _mongo[Config.DB_NAME]
 
-collection                   = db["anime_characters"]
-user_collection              = db["users"]
-user_totals_collection       = db["chat_settings"]
-group_user_totals_collection = db["group_user_totals"]
-top_global_groups_collection = db["top_groups"]
-pm_users                     = db["pm_users"]
-market_collection            = db["market_listings"]
-bm_market_collection         = db["bm_market"]
-star_market_collection       = db["star_market"]
-ton_orders_collection        = db["ton_orders"]
-active_drops_collection      = db["active_drops"]
-bot_settings_collection      = db["bot_settings"]
+def _col(name: str) -> FallbackCollection:
+    """Wrap a Motor collection with quota-exceeded fallback to in-memory."""
+    return FallbackCollection(_mdb[name], name)
+
+# keep a reference to the raw motor db for modules that need db["sequences"] etc.
+db = _mdb
+
+collection                   = _col("anime_characters")
+user_collection              = _col("users")
+user_totals_collection       = _col("chat_settings")
+group_user_totals_collection = _col("group_user_totals")
+top_global_groups_collection = _col("top_groups")
+pm_users                     = _col("pm_users")
+market_collection            = _col("market_listings")
+bm_market_collection         = _col("bm_market")
+star_market_collection       = _col("star_market")
+ton_orders_collection        = _col("ton_orders")
+active_drops_collection      = _col("active_drops")
+bot_settings_collection      = _col("bot_settings")
 waifu_collection             = collection
 
 from telegram.ext import Application

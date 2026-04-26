@@ -528,3 +528,220 @@ class MemDatabase:
 
     def get_collection(self, name: str) -> MemCollection:
         return self._col(name)
+
+
+# ── FallbackCollection ────────────────────────────────────────────────────────
+
+import logging as _logging
+_FLOG = _logging.getLogger("waifu.memdb")
+
+_QUOTA_KEYWORDS = (
+    "quota", "exceeded", "storage limit", "free tier",
+    "too many", "out of space", "disk", "errmsg", "full",
+    "8000", "code: 8000",
+)
+
+
+def _is_quota_err(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(k in msg for k in _QUOTA_KEYWORDS)
+
+
+class FallbackCollection:
+    """
+    Wraps a Motor (MongoDB) collection with an in-memory fallback.
+
+    Normal mode  → all operations go to MongoDB.
+    Fallback mode → triggered when any WRITE fails with a quota/storage error.
+                    Writes go to in-memory; reads still try MongoDB first.
+    """
+
+    def __init__(self, motor_col, name: str):
+        self._db   = motor_col
+        self._mem  = MemCollection(name)
+        self._name = name
+        self._fallback = False   # True once quota exceeded
+
+    def _warn_switch(self, exc: Exception) -> None:
+        self._fallback = True
+        _FLOG.warning(
+            "⚠️  MongoDB quota exceeded on '%s' — switching to in-memory fallback. "
+            "Data added now is temporary (lost on restart). Error: %s",
+            self._name, exc,
+        )
+
+    # ── reads (try mongo first, then mem) ─────────────────────────────────────
+
+    async def find_one(self, filt=None, *args, **kwargs):
+        try:
+            result = await self._db.find_one(filt or {}, *args, **kwargs)
+            if result is not None:
+                return result
+            # also check mem (data written there during fallback)
+            return await self._mem.find_one(filt or {})
+        except Exception:
+            return await self._mem.find_one(filt or {})
+
+    def find(self, filt=None, *args, **kwargs):
+        # Return a cursor that merges both sources
+        return _MergedCursor(self._db, self._mem, filt or {})
+
+    async def count_documents(self, filt=None) -> int:
+        filt = filt or {}
+        try:
+            n = await self._db.count_documents(filt)
+        except Exception:
+            n = 0
+        n += await self._mem.count_documents(filt)
+        return n
+
+    def aggregate(self, pipeline):
+        return self._mem.aggregate(pipeline)   # mem only (lightweight stats)
+
+    # ── writes ────────────────────────────────────────────────────────────────
+
+    async def insert_one(self, document):
+        if self._fallback:
+            return await self._mem.insert_one(document)
+        try:
+            return await self._db.insert_one(document)
+        except Exception as exc:
+            if _is_quota_err(exc):
+                self._warn_switch(exc)
+                return await self._mem.insert_one(document)
+            raise
+
+    async def update_one(self, filt, update, upsert=False):
+        if self._fallback:
+            return await self._mem.update_one(filt, update, upsert=upsert)
+        try:
+            return await self._db.update_one(filt, update, upsert=upsert)
+        except Exception as exc:
+            if _is_quota_err(exc):
+                self._warn_switch(exc)
+                return await self._mem.update_one(filt, update, upsert=upsert)
+            raise
+
+    async def update_many(self, filt, update):
+        if self._fallback:
+            return await self._mem.update_many(filt, update)
+        try:
+            return await self._db.update_many(filt, update)
+        except Exception as exc:
+            if _is_quota_err(exc):
+                self._warn_switch(exc)
+                return await self._mem.update_many(filt, update)
+            raise
+
+    async def delete_one(self, filt):
+        if self._fallback:
+            return await self._mem.delete_one(filt)
+        try:
+            return await self._db.delete_one(filt)
+        except Exception as exc:
+            if _is_quota_err(exc):
+                self._warn_switch(exc)
+                return await self._mem.delete_one(filt)
+            raise
+
+    async def delete_many(self, filt):
+        if self._fallback:
+            return await self._mem.delete_many(filt)
+        try:
+            return await self._db.delete_many(filt)
+        except Exception as exc:
+            if _is_quota_err(exc):
+                self._warn_switch(exc)
+                return await self._mem.delete_many(filt)
+            raise
+
+    async def find_one_and_update(self, filt, update, upsert=False, **kw):
+        if self._fallback:
+            return await self._mem.find_one_and_update(filt, update, upsert=upsert)
+        try:
+            return await self._db.find_one_and_update(filt, update, upsert=upsert, **kw)
+        except Exception as exc:
+            if _is_quota_err(exc):
+                self._warn_switch(exc)
+                return await self._mem.find_one_and_update(filt, update, upsert=upsert)
+            raise
+
+    async def create_index(self, *args, **kwargs):
+        try:
+            await self._db.create_index(*args, **kwargs)
+        except Exception:
+            pass
+
+    async def drop_index(self, *args, **kwargs):
+        try:
+            await self._db.drop_index(*args, **kwargs)
+        except Exception:
+            pass
+
+    async def estimated_document_count(self):
+        try:
+            return await self._db.estimated_document_count()
+        except Exception:
+            return await self._mem.estimated_document_count()
+
+
+class _MergedCursor:
+    """Cursor that merges results from MongoDB + in-memory fallback."""
+
+    def __init__(self, motor_col, mem_col, filt):
+        self._db  = motor_col
+        self._mem = mem_col
+        self._filt = filt
+        self._sort_spec = []
+        self._limit_n = None
+        self._skip_n  = 0
+
+    def sort(self, key_or_list, direction=1):
+        if isinstance(key_or_list, list):
+            self._sort_spec = key_or_list
+        else:
+            self._sort_spec = [(key_or_list, direction)]
+        return self
+
+    def limit(self, n):
+        self._limit_n = n
+        return self
+
+    def skip(self, n):
+        self._skip_n = n
+        return self
+
+    async def to_list(self, length=None):
+        docs = []
+        try:
+            cur = self._db.find(self._filt)
+            if self._sort_spec:
+                cur = cur.sort(self._sort_spec)
+            docs = await cur.to_list(length=length or 10_000)
+        except Exception:
+            pass
+        mem_docs = await self._mem.find(self._filt).to_list()
+        # merge (no duplicates by _id)
+        seen = {str(d.get("_id")) for d in docs}
+        for d in mem_docs:
+            if str(d.get("_id")) not in seen:
+                docs.append(d)
+        docs = docs[self._skip_n:]
+        if self._limit_n:
+            docs = docs[:self._limit_n]
+        if length:
+            docs = docs[:length]
+        return docs
+
+    def __aiter__(self):
+        self._iter_coro = self.to_list()
+        self._iter_list = None
+        return self
+
+    async def __anext__(self):
+        if self._iter_list is None:
+            self._iter_list = iter(await self._iter_coro)
+        try:
+            return next(self._iter_list)
+        except StopIteration:
+            raise StopAsyncIteration
