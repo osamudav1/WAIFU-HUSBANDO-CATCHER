@@ -62,8 +62,6 @@ star_market_collection       = _col("star_market")
 ton_orders_collection        = _col("ton_orders")
 active_drops_collection      = _col("active_drops")
 bot_settings_collection      = _col("bot_settings")
-mmshop_listings_collection   = _col("mmshop_listings")
-mmshop_orders_collection     = _col("mmshop_orders")
 waifu_collection             = collection
 
 from telegram.ext import Application
@@ -122,6 +120,5 @@ __all__ = [
     "pm_users", "market_collection", "bm_market_collection",
     "star_market_collection", "ton_orders_collection", "active_drops_collection",
     "bot_settings_collection", "waifu_collection",
-    "mmshop_listings_collection", "mmshop_orders_collection",
     "registered_chats",
 ]
