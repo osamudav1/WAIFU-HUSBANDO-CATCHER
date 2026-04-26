@@ -204,20 +204,28 @@ async def mmshop_cmd(update: Update, context: CallbackContext) -> None:
         return
 
     try:
-        char_id   = int(args[0])
         mmk_price = int(args[1].replace(",", ""))
         copies    = int(args[2]) if len(args) > 2 else 0
     except ValueError:
-        await update.message.reply_text("❌ Numbers ဖြစ်ရမည်။")
+        await update.message.reply_text("❌ MMK price နဲ့ copies numbers ဖြစ်ရမည်။")
         return
 
+    # Character IDs are stored as strings in DB (e.g. "30"), strip leading zeros
+    char_id = args[0].strip().lstrip("0") or args[0].strip()
+
     char = await char_collection.find_one({"id": char_id})
+    if not char:
+        # fallback: try integer form
+        try:
+            char = await char_collection.find_one({"id": int(char_id)})
+        except Exception:
+            pass
     if not char:
         await update.message.reply_text(f"❌ Character ID {char_id} မတွေ့ပါ။")
         return
 
     li = {
-        "char_id":    char_id,
+        "char_id":    char.get("id", char_id),   # use exact id from DB
         "char_name":  char.get("name",       "Unknown"),
         "char_anime": char.get("anime",      "Unknown"),
         "char_rarity":char.get("rarity",     "Unknown"),
@@ -480,7 +488,7 @@ async def _cb_confirm(cq, context: CallbackContext, order_id: str) -> None:
     buyer_id  = order["buyer_id"]
     char_name = order.get("char_name", "Unknown")
     mmk_price = order.get("mmk_price", 0)
-    img_url   = order.get("img_url", "")
+    img_url    = order.get("img_url", "")
     media_type = order.get("media_type", "photo")
 
     buyer_txt = (
