@@ -518,6 +518,20 @@ class MemCollection:
     async def estimated_document_count(self) -> int:
         return len(self._store)
 
+    async def distinct(self, field: str, filt: dict = None) -> list:
+        filt = filt or {}
+        seen: set = set()
+        result = []
+        for doc in self._store.values():
+            if _match(doc, filt):
+                val = _get_field(doc, field)
+                if val is not None:
+                    key = str(val)
+                    if key not in seen:
+                        seen.add(key)
+                        result.append(val)
+        return result
+
 
 # ── database ──────────────────────────────────────────────────────────────────
 
@@ -542,6 +556,51 @@ class MemDatabase:
 
     def get_collection(self, name: str) -> MemCollection:
         return self._col(name)
+
+
+# ── MongoAggregateCursor ──────────────────────────────────────────────────────
+
+class _MongoAggregateCursor:
+    """
+    Async cursor for FallbackCollection.aggregate().
+    Tries MongoDB first; falls back to in-memory on error.
+    """
+
+    def __init__(self, motor_col, mem_col, pipeline):
+        self._motor    = motor_col
+        self._mem      = mem_col
+        self._pipeline = pipeline
+        self._docs: list | None = None
+        self._idx = 0
+
+    async def _load(self) -> list:
+        if self._docs is None:
+            try:
+                self._docs = await self._motor.aggregate(self._pipeline).to_list(length=None)
+            except Exception:
+                self._docs = []
+            if not self._docs:
+                try:
+                    self._docs = await self._mem.aggregate(self._pipeline).to_list(length=None)
+                except Exception:
+                    self._docs = []
+        return self._docs
+
+    async def to_list(self, length=None) -> list:
+        docs = await self._load()
+        return docs[:length] if length is not None else list(docs)
+
+    def __aiter__(self):
+        self._idx = 0
+        return self
+
+    async def __anext__(self):
+        docs = await self._load()
+        if self._idx >= len(docs):
+            raise StopAsyncIteration
+        doc = docs[self._idx]
+        self._idx += 1
+        return doc
 
 
 # ── FallbackCollection ────────────────────────────────────────────────────────
@@ -610,7 +669,26 @@ class FallbackCollection:
         return n
 
     def aggregate(self, pipeline):
-        return self._mem.aggregate(pipeline)   # mem only (lightweight stats)
+        if self._fallback:
+            return self._mem.aggregate(pipeline)
+        return _MongoAggregateCursor(self._db, self._mem, pipeline)
+
+    async def distinct(self, field, filt=None):
+        filt = filt or {}
+        try:
+            db_result = await self._db.distinct(field, filt)
+        except Exception:
+            db_result = []
+        mem_result = await self._mem.distinct(field, filt)
+        combined = list({str(v): v for v in [*db_result, *mem_result]}.values())
+        return combined
+
+    async def drop(self):
+        try:
+            await self._db.drop()
+        except Exception:
+            pass
+        await self._mem.drop()
 
     # ── writes ────────────────────────────────────────────────────────────────
 
