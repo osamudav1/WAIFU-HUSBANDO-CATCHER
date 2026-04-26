@@ -377,7 +377,9 @@ async def step_limit(update: Update, context: CallbackContext) -> int:
                 LOGGER.warning("CHARA_CHANNEL notify failed: %s", ch_err)
 
         # ── Notify GROUP ───────────────────────────────────────────────────────
-        if GROUP_ID and str(GROUP_ID) != str(store_chat):
+        # Skip if GROUP_ID is the same as CHARA_CHANNEL_ID (avoid duplicate)
+        if GROUP_ID and str(GROUP_ID) != str(store_chat) \
+                and str(GROUP_ID) != str(CHARA_CHANNEL_ID):
             try:
                 if media_type == "video":
                     await bot_local.send_video(
