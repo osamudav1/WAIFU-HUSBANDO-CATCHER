@@ -18,6 +18,8 @@ Buy flow (PM only):
 """
 from __future__ import annotations
 
+import asyncio
+import random
 import time
 from html import escape
 
@@ -40,6 +42,18 @@ _PAGE_SIZE = 4
 
 # user_id → {order_id, char_name, mmk_price, pay_type}
 _pending_receipt: dict[int, dict] = {}
+
+# ── MMK Drop state ───────────────────────────────────────────────────────────
+_mm_msg_count:    dict[int, int]   = {}   # chat_id → msg count
+_mm_active_drop:  dict[int, dict]  = {}   # chat_id → active listing doc
+_mm_last_drop:    dict[int, float] = {}   # chat_id → timestamp of last drop
+_mm_unique_users: dict[int, dict]  = {}   # chat_id → {user_id: last_msg_ts}
+
+_MM_MSG_THRESHOLD = 2000    # messages needed to trigger a drop
+_MM_COOLDOWN_SECS = 5       # seconds between consecutive drops
+_MM_MIN_MEMBERS   = 3000    # minimum group member count
+_MM_MIN_ACTIVE    = 200     # minimum unique active users (last 1 hour)
+_MM_EXPIRE_SECS   = 60      # seconds before drop card expires
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -620,14 +634,184 @@ async def _mm_callback(update: Update, context: CallbackContext) -> None:
         await cq.answer()
 
 
+# ── MMK Group Drop System ─────────────────────────────────────────────────────
+
+async def _check_group_qualify(bot, chat_id: int) -> bool:
+    """Return True if the group meets the minimum requirements for MMK drops."""
+    try:
+        member_count = await bot.get_chat_member_count(chat_id)
+        if member_count < _MM_MIN_MEMBERS:
+            return False
+    except Exception:
+        return False
+
+    now = time.time()
+    users = _mm_unique_users.get(chat_id, {})
+    # Count users who sent a message within the last hour
+    active = sum(1 for ts in users.values() if now - ts <= 3600)
+    return active >= _MM_MIN_ACTIVE
+
+
+async def _mm_expire_drop(chat_id: int, msg, listing_id: str) -> None:
+    """Edit the drop message to 'expired' after _MM_EXPIRE_SECS seconds."""
+    await asyncio.sleep(_MM_EXPIRE_SECS)
+    # Only expire if this listing is still the active drop
+    active = _mm_active_drop.get(chat_id)
+    if active and str(active.get("_id", "")) == listing_id:
+        _mm_active_drop.pop(chat_id, None)
+        expired_txt = (
+            "⏰ <b>MMK Drop — ကုန်သွားပြီ!</b>\n\n"
+            "Card မရပြီ — /mmshop မှာ ဝယ်ယူနိုင်သည်။"
+        )
+        try:
+            await msg.edit_caption(expired_txt, parse_mode=ParseMode.HTML,
+                                   reply_markup=InlineKeyboardMarkup([[
+                                       InlineKeyboardButton("🏪 /mmshop", callback_data="mm_noop")
+                                   ]]))
+        except Exception:
+            try:
+                await msg.edit_text(expired_txt, parse_mode=ParseMode.HTML,
+                                    reply_markup=InlineKeyboardMarkup([[
+                                        InlineKeyboardButton("🏪 /mmshop", callback_data="mm_noop")
+                                    ]]))
+            except Exception:
+                pass
+
+
+async def _send_mm_drop(chat_id: int, bot) -> None:
+    """Pick a random active MMK listing and post it as a group drop."""
+    listings = await mmshop_listings_collection.find(
+        {"sold_out": {"$ne": True}}
+    ).to_list(200)
+
+    if not listings:
+        return
+
+    # Weight by lower price first (better deals more likely to show)
+    li = random.choice(listings)
+    lid = str(li["_id"])
+
+    _mm_active_drop[chat_id] = li
+    _mm_last_drop[chat_id]   = time.time()
+
+    copies = li.get("copies", 0)
+    sold   = li.get("sold_count", 0)
+    stock  = "♾️ Unlimited" if copies == 0 else f"{copies - sold} ကျန်"
+
+    cap = (
+        f"💰 <b>MMK Special Drop!</b>\n\n"
+        f"🌸 <b>{escape(li.get('char_name', ''))}</b>\n"
+        f"📺 {escape(li.get('char_anime', ''))}\n"
+        f"💎 {escape(li.get('char_rarity', ''))}\n\n"
+        f"💵 Price: <b>{li.get('mmk_price', 0):,} MMK</b>\n"
+        f"📦 Stock: {stock}\n\n"
+        f"⏰ {_MM_EXPIRE_SECS} seconds ထဲ DM to Buy!"
+    )
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton("💳 To Buy (DM)", callback_data=f"mm_buy_{lid}"),
+    ]])
+
+    img = li.get("img_url", "")
+    try:
+        if li.get("media_type") == "video":
+            msg = await bot.send_video(chat_id, img, caption=cap,
+                                       parse_mode=ParseMode.HTML, reply_markup=kb)
+        else:
+            msg = await bot.send_photo(chat_id, img, caption=cap,
+                                       parse_mode=ParseMode.HTML, reply_markup=kb)
+    except Exception:
+        try:
+            msg = await bot.send_message(chat_id, cap,
+                                         parse_mode=ParseMode.HTML, reply_markup=kb)
+        except Exception:
+            _mm_active_drop.pop(chat_id, None)
+            return
+
+    asyncio.create_task(_mm_expire_drop(chat_id, msg, lid))
+
+
+async def _mm_message_counter(update: Update, context: CallbackContext) -> None:
+    """Track messages per group and trigger MMK drops when threshold is hit."""
+    chat = update.effective_chat
+    user = update.effective_user
+    if not chat or chat.type == "private" or not user:
+        return
+
+    chat_id = chat.id
+    user_id = user.id
+    now     = time.time()
+
+    # Track unique active users (rolling 1-hour window)
+    bucket = _mm_unique_users.setdefault(chat_id, {})
+    bucket[user_id] = now
+    # Prune stale entries every ~500 messages to save memory
+    cnt = _mm_msg_count.get(chat_id, 0)
+    if cnt % 500 == 0 and bucket:
+        cutoff = now - 3600
+        _mm_unique_users[chat_id] = {u: t for u, t in bucket.items() if t > cutoff}
+
+    # Count messages
+    _mm_msg_count[chat_id] = cnt + 1
+
+    if _mm_msg_count[chat_id] < _MM_MSG_THRESHOLD:
+        return
+
+    # Cooldown guard
+    last = _mm_last_drop.get(chat_id, 0)
+    if now - last < _MM_COOLDOWN_SECS:
+        _mm_msg_count[chat_id] = 0
+        return
+
+    # Skip if drop already active
+    if _mm_active_drop.get(chat_id):
+        _mm_msg_count[chat_id] = 0
+        return
+
+    # Check group qualifications
+    if not await _check_group_qualify(context.bot, chat_id):
+        _mm_msg_count[chat_id] = 0
+        return
+
+    _mm_msg_count[chat_id] = 0
+    asyncio.create_task(_send_mm_drop(chat_id, context.bot))
+
+
+# ── /mmsetexpire — owner can change expire time ───────────────────────────────
+
+async def mmsetexpire_cmd(update: Update, context: CallbackContext) -> None:
+    global _MM_EXPIRE_SECS
+    if not _is_owner(update.effective_user.id):
+        await update.message.reply_text("❌ Owner only.")
+        return
+    args = context.args or []
+    if not args or not args[0].isdigit():
+        await update.message.reply_text(
+            f"Current expire: <b>{_MM_EXPIRE_SECS}s</b>\n"
+            "Usage: <code>/mmsetexpire &lt;seconds&gt;</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    _MM_EXPIRE_SECS = max(10, int(args[0]))
+    await bot_settings_collection.update_one(
+        {"_id": "mm_expire_secs"}, {"$set": {"value": _MM_EXPIRE_SECS}}, upsert=True)
+    await update.message.reply_text(
+        f"✅ MMK drop expire: <b>{_MM_EXPIRE_SECS}s</b>", parse_mode=ParseMode.HTML)
+
+
 # ── register handlers ─────────────────────────────────────────────────────────
 
-application.add_handler(CommandHandler("mmshop",   mmshop_cmd,   block=False))
-application.add_handler(CommandHandler("mmremove", mmremove_cmd, block=False))
-application.add_handler(CommandHandler("setphone", setphone_cmd, block=False))
+application.add_handler(CommandHandler("mmshop",      mmshop_cmd,      block=False))
+application.add_handler(CommandHandler("mmremove",    mmremove_cmd,    block=False))
+application.add_handler(CommandHandler("setphone",    setphone_cmd,    block=False))
+application.add_handler(CommandHandler("mmsetexpire", mmsetexpire_cmd, block=False))
 application.add_handler(CallbackQueryHandler(_mm_callback, pattern=r"^mm_", block=False))
 application.add_handler(MessageHandler(
     filters.ChatType.PRIVATE & (filters.PHOTO | filters.Document.ALL),
     _receipt_handler,
+    block=False,
+))
+application.add_handler(MessageHandler(
+    filters.ChatType.GROUPS & filters.TEXT & (~filters.COMMAND),
+    _mm_message_counter,
     block=False,
 ))
