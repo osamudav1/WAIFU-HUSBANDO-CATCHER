@@ -411,7 +411,13 @@ OWNER_CMD_INFO = {
     "upload":    ("📤 <b>Upload Character</b>\n\nPM ထဲမှာ ပုံ တိုက်ရိုက်ပို့ (သို့) /upload ရိုက်ပေး",),
     "forcedrop": ("⚡ <b>Force Drop</b>\n\nGroup ထဲမှာ <code>/forcedrop</code> ရိုက်ပေး\n\n"
                   "Drop interval ပြောင်းရန်:\n<code>/changetime [မိနစ်]</code>",),
-    "broadcast": ("📢 <b>Broadcast</b>\n\n<code>/broadcast [message]</code> ရိုက်ပေး",),
+    "broadcast": (
+        "📢 <b>Broadcast</b>\n\n"
+        "<b>① Reply နဲ့:</b>\n"
+        "Message ကို reply လုပ်ပြီး <code>/broadcast</code> ပို့ပေး\n\n"
+        "<b>② Text ရိုက်တာ:</b>\n"
+        "<code>/broadcast မင်္ဂလာပါ everyone!</code>",
+    ),
     "delete":    ("🗑 <b>Delete Character</b>\n\n<code>/delete [ID]</code> ရိုက်ပေး",),
     "update":    ("🔧 <b>Update Character</b>\n\n<code>/update [ID] [field] [value]</code>\nFields: name, anime, rarity, img_url",),
     "sudo":      ("👤 <b>Sudo Users</b>\n\n<code>/addsudo [user_id]</code>\n<code>/removesudo [user_id]</code>",),

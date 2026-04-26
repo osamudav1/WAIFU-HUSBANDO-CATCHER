@@ -1,0 +1,796 @@
+{
+  "version": "2.0",
+  "timestamp": "2026-04-25T13:21:33.984818+00:00",
+  "characters": [
+    {
+      "img_url": "AgACAgUAAxkBAAIU82nbMYzG0Lj3S5VwNMHLSJ_lwSoYAAJaDWsbM5HYVniIBIGnF1qhAQADAgADdwADOwQ",
+      "media_type": "photo",
+      "name": "Monkey D Luffy",
+      "anime": "One Piece",
+      "rarity": "🌐 Global",
+      "id": "25",
+      "limit": 8,
+      "claimed_count": 2,
+      "video_url": "BAACAgUAAxkBAAIU4mnbID1PCdCNqOl3HVCYxMPQhE2YAALAHQACM5HYVsrCV08MV0q7OwQ"
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIVW2nbwp6nEM49VIhbGbOzMp9vJohwAAJFD2sbnVbgVvP5nTH4fC-4AQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Columbina",
+      "anime": "Genshin Impact",
+      "rarity": "🟤 Medium",
+      "id": "26",
+      "limit": 45,
+      "claimed_count": 3
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIVsGnb4N5kmEdUnrYNr9j5IcgC6U06AAJcD2sbnVbgVm7Z3JLfxtegAQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Chika Fujiwara [🎒]",
+      "anime": "Kaguya Sama : Love Is War",
+      "rarity": "🟡 Legendary",
+      "id": "29",
+      "limit": 35,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIVxGnb5iU4Nyi-1wQBvLmhMS_6HNfAAAJmD2sbnVbgVtjNEkZgBC07AQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Raiden Shogun",
+      "anime": "Genshin Impact [🎮]",
+      "rarity": "🪞 Supreme",
+      "id": "31",
+      "limit": 30,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIV62nb7eEWKaWtq05kEhtwVdaRcqULAAJvD2sbnVbgVu5o1ZfzzJIgAQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Eula Lawrence",
+      "anime": "Genshin Impact [🎮]",
+      "rarity": "🟡 Legendary",
+      "id": "34",
+      "limit": 35,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIV92nb736cNdGuza6BZIekebjCsiIXAAJzD2sbnVbgVvdDarPsmdAZAQADAgADeAADOwQ",
+      "media_type": "photo",
+      "name": "Light Yagami",
+      "anime": "Death Note",
+      "rarity": "🟡 Legendary",
+      "id": "35",
+      "limit": 22,
+      "claimed_count": 0,
+      "video_url": "BAACAgUAAxkBAAIWemncevpR3ML6Phellsl2NzjPvK7QAAK6HwACnVboVqVB4v4fixqrOwQ"
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIWRWncbkzT-IBXSr2q8iVaIjUHsAABzwACEA9rG51W6FY8RD7PRX0XQAEAAwIAA3kAAzsE",
+      "media_type": "photo",
+      "name": "Jinhsi",
+      "anime": "Genshin Impact [🎮]",
+      "rarity": "💮 Special Edition",
+      "id": "37",
+      "limit": 10,
+      "claimed_count": 1,
+      "video_url": "BAACAgUAAxkBAAIWTWncbqfAKQABZdp2Y6JZEKEdKQynlwACqB8AAp1W6FYY5QYImw2tEzsE"
+    },
+    {
+      "img_url": "AgACAgUAAyEGAATmgKO_AAIcYmnsemqq1XgfOm6o1bnKuUcpqTXzAAIiD2sbnVboVg_2P98d878AAQEAAwIAA3gAAzsE",
+      "media_type": "photo",
+      "name": "Rin Kanaoya",
+      "anime": "The Dangers In My Heart",
+      "rarity": "⚪ Common",
+      "id": "39",
+      "limit": 13,
+      "claimed_count": 1
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIWgGncfBaCKNio7xk1N7Wu34HfvHLKAAItD2sbnVboVoCsMUURY6lTAQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Hinata Hyuga",
+      "anime": "Naruto/Boruto",
+      "rarity": "💮 Special Edition",
+      "id": "41",
+      "limit": 6,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIWnmnctpcJyxUltfiBeNMi-AdZGmBRAAK-D2sbnVboVrvni2c4Pf04AQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Duca Degli Abruzzi & Giuseppe Garibaldi",
+      "anime": "Azur Lane",
+      "rarity": "🟤 Medium",
+      "id": "43",
+      "limit": 32,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIWqmncuUg__-X4nvfghJkzjudFfVhsAALKD2sbnVboVh8OUJE9Rg5fAQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Elise",
+      "anime": "Wandering Witch:",
+      "rarity": "⚪ Common",
+      "id": "44",
+      "limit": 15,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAyEGAATmgKO_AAIcimnsfHqJdURvuludDhsAAeZp5c5wLgACqw5rGzOR0FZAg8AzRWOmRAEAAwIAA3kAAzsE",
+      "name": "Fern",
+      "anime": "Frieren: Beyond",
+      "rarity": "🟡 Legendary",
+      "id": "19",
+      "limit": 35,
+      "claimed_count": 6
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIUjmnan4IRxe0hS8YHC93LFfJKdHi6AALtDmsbM5HQVhvehqEajrEXAQADAgADeQADOwQ",
+      "name": "Megazord Arise",
+      "anime": "Solo Leveling",
+      "rarity": "🔮 Mythical",
+      "id": "20",
+      "limit": 8,
+      "claimed_count": 3
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIUmmnaoY3vrqUfBjM2fbG0h49MH2CCAALvDmsbM5HQVnjNPv3mfKy3AQADAgADeQADOwQ",
+      "name": "Joe Togame",
+      "anime": "Wind Breaker",
+      "rarity": "⚪ Common",
+      "id": "21",
+      "limit": 75,
+      "claimed_count": 9,
+      "video_url": "BAACAgUAAxkBAAIUrGnaqPJZ89oAAUHa6rMMCDhfb-r4sQACMh8AAjOR0FbQKZoRO38mnTsE"
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIVdmnbxTJTZiMG8bRa6AOYtSVNXO-VAAJMD2sbnVbgVswscQvo3llpAQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Shinobu Kochou [👘]",
+      "anime": "Demon Slayer",
+      "rarity": "🟣 Rare",
+      "id": "27",
+      "limit": 135,
+      "claimed_count": 1
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIZcGnseWCJ_9xiKSdjXemEcwITHI-kAAJfD2sbnVbgVgigfJnTVb5dAQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Chisa",
+      "anime": "Wuthering Waves [🎮]",
+      "rarity": "🔮 Mythical",
+      "id": "30",
+      "limit": 15,
+      "claimed_count": 5,
+      "video_url": "BAACAgUAAxkBAAIWOWncaSeqr7QLvxdXF0lXHOLZq4glAAKjHwACnVboVjk8KxKGMIJjOwQ"
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIV2Gnb6aJPu1tVoCUbW8CFKbSIKzqJAAJsD2sbnVbgVowX_t84O2x6AQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Renard",
+      "anime": "Redo Of Healer",
+      "rarity": "⚪ Common",
+      "id": "32",
+      "limit": 135,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIWV2ncduhsbBiQuxZJb2EJ1it-5-8eAAIhD2sbnVboVvz2vFqdpJ9wAQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Camellya",
+      "anime": "Wuthering Waves [🎮]",
+      "rarity": "🪞 Supreme",
+      "id": "38",
+      "limit": 10,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIWZ2nceGUwpX_a4GAjItiK6Xj1csbNAAIjD2sbnVboVpyGD4cii3U_AQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Monsieur Neuvillette",
+      "anime": "Genshin Impact [🎮]",
+      "rarity": "🔮 Mythical",
+      "id": "40",
+      "limit": 13,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIWwGncuy7sV5LXNZEzeRO0RdufbrtEAALeD2sbnVboVhudj6VRFVDtAQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Nami",
+      "anime": "One Piece",
+      "rarity": "✖️ CrossVerse",
+      "id": "46",
+      "limit": 10,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIVnWnbysRh4TggNloRFMjvCLYiQAg_AAJPD2sbnVbgVtSoWwgrkwcWAQADAgADdwADOwQ",
+      "media_type": "photo",
+      "name": "Sung Jin Woo",
+      "anime": "Solo Leveling",
+      "rarity": "🌌 Universal Limited",
+      "id": "28",
+      "limit": 5,
+      "claimed_count": 1
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIV4Gnb6hkJDaS5C1D9m4OXqD_UUHaQAAJuD2sbnVbgVgsAAWe3B21xPAEAAwIAA3cAAzsE",
+      "media_type": "photo",
+      "name": "Denji [🗡]",
+      "anime": "Chainsaw Man",
+      "rarity": "🪞 Supreme",
+      "id": "33",
+      "limit": 20,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIV_2nb8A_eB0Bbxi2KGX9qhWLgPO8OAAJ0D2sbnVbgVtPx9XlLouB5AQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Crystal Choi",
+      "anime": "Lookism",
+      "rarity": "🟤 Medium",
+      "id": "36",
+      "limit": 65,
+      "claimed_count": 1
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIWiGncfcT7IrRmO8_r07UaQeyetWkpAAIxD2sbnVboVoBbV1wmW3FmAQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Ryusui Nanami",
+      "anime": "Dr. Stone",
+      "rarity": "🟣 Rare",
+      "id": "42",
+      "limit": 65,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIWuGncud2joRpjPGWrB3SWT7vaR1itAALMD2sbnVboVqpX61_u8CsKAQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Mei Mei",
+      "anime": "Jujutsu Kaisen",
+      "rarity": "🟡 Legendary",
+      "id": "45",
+      "limit": 18,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAyEFAATmgKO_AAIdPGnstWUQVYPFjkljJPalLXt9cjj5AAJvF2sbnzs5V0yuWjzSDIGZAQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Hanekawa Hasumi",
+      "anime": "Blue Archive",
+      "rarity": "🟡 Legendary",
+      "id": "47",
+      "limit": 74,
+      "claimed_count": 1
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIZ5mnsttqbs-Ui8VTxVJjYT5GWd_b4AALDD2sbK2RpVyDUx3LnlQSdAQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Koharu",
+      "anime": "9 R.I.P.",
+      "rarity": "🟤 Medium",
+      "id": "48",
+      "limit": 5,
+      "claimed_count": 0
+    },
+    {
+      "img_url": "AgACAgUAAxkBAAIZ7mnst7a3rSYqw1QGei5KY6gUUwViAALHD2sbK2RpV2D4CbY0poBvAQADAgADeQADOwQ",
+      "media_type": "photo",
+      "name": "Beru",
+      "anime": "Solo Leveling",
+      "rarity": "🟡 Legendary",
+      "id": "49",
+      "limit": 10,
+      "claimed_count": 0
+    }
+  ],
+  "users": [
+    {
+      "id": 6762363593,
+      "username": "kirito22112",
+      "first_name": "Osamu",
+      "characters": [
+        {
+          "_id": "69db3970973b739c136e9232",
+          "img_url": "AgACAgUAAxkBAAIU82nbMYzG0Lj3S5VwNMHLSJ_lwSoYAAJaDWsbM5HYVniIBIGnF1qhAQADAgADdwADOwQ",
+          "media_type": "photo",
+          "name": "Monkey D Luffy",
+          "anime": "One Piece",
+          "rarity": "🌐 Global",
+          "id": "25",
+          "limit": 8,
+          "claimed_count": 1,
+          "global_rank": "002"
+        },
+        {
+          "_id": "69dbcaf33d44d3688d32422b",
+          "img_url": "AgACAgUAAxkBAAIVnWnbysRh4TggNloRFMjvCLYiQAg_AAJPD2sbnVbgVtSoWwgrkwcWAQADAgADdwADOwQ",
+          "media_type": "photo",
+          "name": "Sung Jin Woo",
+          "anime": "Solo Leveling",
+          "rarity": "🌌 Universal Limited",
+          "id": "28",
+          "limit": 5,
+          "claimed_count": 0
+        },
+        {
+          "_id": "69da9fa854c0ef62e12ddf82",
+          "img_url": "AgACAgUAAxkBAAIUjmnan4IRxe0hS8YHC93LFfJKdHi6AALtDmsbM5HQVhvehqEajrEXAQADAgADeQADOwQ",
+          "name": "Megazord Arise",
+          "anime": "Solo Leveling",
+          "rarity": "🔮 Mythical",
+          "id": "20",
+          "limit": 8,
+          "claimed_count": 2
+        },
+        {
+          "_id": "69da70594ee5a7e423c52180",
+          "img_url": "AgACAgUAAxkBAAIUdWnabW-FOw4zrfrbe81sP5lNDu3zAAKrDmsbM5HQVkCDwDNFY6ZEAQADAgADeQADOwQ",
+          "name": "Fern",
+          "anime": "Frieren: Beyond",
+          "rarity": "🟡 Legendary",
+          "id": "19",
+          "limit": 35,
+          "claimed_count": 3
+        },
+        {
+          "_id": "69dbe176a21d40318ef0c26a",
+          "img_url": "AgACAgUAAxkBAAIVuGnb4UYWDT3cyT9yVFeDO07WjU5eAAJfD2sbnVbgVgigfJnTVb5dAQADAgADeQADOwQ",
+          "media_type": "photo",
+          "name": "Chisa",
+          "anime": "Wuthering Waves [🎮]",
+          "rarity": "🔮 Mythical",
+          "id": "30",
+          "limit": 15,
+          "claimed_count": 0
+        },
+        {
+          "_id": "69daa1d423b6711aeff8d29a",
+          "img_url": "AgACAgUAAxkBAAIUmmnaoY3vrqUfBjM2fbG0h49MH2CCAALvDmsbM5HQVnjNPv3mfKy3AQADAgADeQADOwQ",
+          "name": "Joe Togame",
+          "anime": "Wind Breaker",
+          "rarity": "⚪ Common",
+          "id": "21",
+          "limit": 75,
+          "claimed_count": 6,
+          "video_url": "BAACAgUAAxkBAAIUrGnaqPJZ89oAAUHa6rMMCDhfb-r4sQACMh8AAjOR0FbQKZoRO38mnTsE"
+        },
+        {
+          "_id": "69dbe176a21d40318ef0c26a",
+          "img_url": "AgACAgUAAxkBAAIVuGnb4UYWDT3cyT9yVFeDO07WjU5eAAJfD2sbnVbgVgigfJnTVb5dAQADAgADeQADOwQ",
+          "media_type": "photo",
+          "name": "Chisa",
+          "anime": "Wuthering Waves [🎮]",
+          "rarity": "🔮 Mythical",
+          "id": "30",
+          "limit": 15,
+          "claimed_count": 1
+        },
+        {
+          "_id": "69dbe176a21d40318ef0c26a",
+          "img_url": "AgACAgUAAxkBAAIVuGnb4UYWDT3cyT9yVFeDO07WjU5eAAJfD2sbnVbgVgigfJnTVb5dAQADAgADeQADOwQ",
+          "media_type": "photo",
+          "name": "Chisa",
+          "anime": "Wuthering Waves [🎮]",
+          "rarity": "🔮 Mythical",
+          "id": "30",
+          "limit": 15,
+          "claimed_count": 2
+        },
+        {
+          "_id": "69da70594ee5a7e423c52180",
+          "img_url": "AgACAgUAAxkBAAIUdWnabW-FOw4zrfrbe81sP5lNDu3zAAKrDmsbM5HQVkCDwDNFY6ZEAQADAgADeQADOwQ",
+          "name": "Fern",
+          "anime": "Frieren: Beyond",
+          "rarity": "🟡 Legendary",
+          "id": "19",
+          "limit": 35,
+          "claimed_count": 4
+        },
+        {
+          "_id": "69dbf06c9a73f4e9493a16e5",
+          "img_url": "AgACAgUAAxkBAAIV_2nb8A_eB0Bbxi2KGX9qhWLgPO8OAAJ0D2sbnVbgVtPx9XlLouB5AQADAgADeQADOwQ",
+          "media_type": "photo",
+          "name": "Crystal Choi",
+          "anime": "Lookism",
+          "rarity": "🟤 Medium",
+          "id": "36",
+          "limit": 65,
+          "claimed_count": 0
+        },
+        {
+          "_id": "69dbe176a21d40318ef0c26a",
+          "img_url": "AgACAgUAAxkBAAIVuGnb4UYWDT3cyT9yVFeDO07WjU5eAAJfD2sbnVbgVgigfJnTVb5dAQADAgADeQADOwQ",
+          "media_type": "photo",
+          "name": "Chisa",
+          "anime": "Wuthering Waves [🎮]",
+          "rarity": "🔮 Mythical",
+          "id": "30",
+          "limit": 15,
+          "claimed_count": 3
+        },
+        {
+          "_id": "69dc6e7b68181b1fcfd7dacd",
+          "img_url": "AgACAgUAAxkBAAIWRWncbkzT-IBXSr2q8iVaIjUHsAABzwACEA9rG51W6FY8RD7PRX0XQAEAAwIAA3kAAzsE",
+          "media_type": "photo",
+          "name": "Jinhsi",
+          "anime": "Genshin Impact [🎮]",
+          "rarity": "💮 Special Edition",
+          "id": "37",
+          "limit": 10,
+          "claimed_count": 0,
+          "video_url": "BAACAgUAAxkBAAIWTWncbqfAKQABZdp2Y6JZEKEdKQynlwACqB8AAp1W6FYY5QYImw2tEzsE"
+        },
+        {
+          "_id": "69dc53e8a65134c2e5634632",
+          "img_url": "AgACAgUAAxkBAAIVW2nbwp6nEM49VIhbGbOzMp9vJohwAAJFD2sbnVbgVvP5nTH4fC-4AQADAgADeQADOwQ",
+          "media_type": "photo",
+          "name": "Columbina",
+          "anime": "Genshin Impact",
+          "rarity": "🟤 Medium",
+          "id": "26",
+          "limit": 45,
+          "claimed_count": 1
+        },
+        {
+          "_id": "69e7d497d178679f734d654c",
+          "img_url": "AgACAgUAAxkBAAIUmmnaoY3vrqUfBjM2fbG0h49MH2CCAALvDmsbM5HQVnjNPv3mfKy3AQADAgADeQADOwQ",
+          "name": "Joe Togame",
+          "anime": "Wind Breaker",
+          "rarity": "⚪ Common",
+          "id": "21",
+          "limit": 75,
+          "claimed_count": 7,
+          "video_url": "BAACAgUAAxkBAAIUrGnaqPJZ89oAAUHa6rMMCDhfb-r4sQACMh8AAjOR0FbQKZoRO38mnTsE"
+        },
+        {
+          "_id": "69e7d497d178679f734d654e",
+          "img_url": "AgACAgUAAxkBAAIVW2nbwp6nEM49VIhbGbOzMp9vJohwAAJFD2sbnVbgVvP5nTH4fC-4AQADAgADeQADOwQ",
+          "media_type": "photo",
+          "name": "Columbina",
+          "anime": "Genshin Impact",
+          "rarity": "🟤 Medium",
+          "id": "26",
+          "limit": 45,
+          "claimed_count": 2
+        },
+        {
+          "_id": "69e7d497d178679f734d654c",
+          "img_url": "AgACAgUAAxkBAAIUmmnaoY3vrqUfBjM2fbG0h49MH2CCAALvDmsbM5HQVnjNPv3mfKy3AQADAgADeQADOwQ",
+          "name": "Joe Togame",
+          "anime": "Wind Breaker",
+          "rarity": "⚪ Common",
+          "id": "21",
+          "limit": 75,
+          "claimed_count": 8,
+          "video_url": "BAACAgUAAxkBAAIUrGnaqPJZ89oAAUHa6rMMCDhfb-r4sQACMh8AAjOR0FbQKZoRO38mnTsE"
+        },
+        {
+          "_id": "69e7d497d178679f734d6552",
+          "img_url": "AgACAgUAAxkBAAIZcGnseWCJ_9xiKSdjXemEcwITHI-kAAJfD2sbnVbgVgigfJnTVb5dAQADAgADeQADOwQ",
+          "media_type": "photo",
+          "name": "Chisa",
+          "anime": "Wuthering Waves [🎮]",
+          "rarity": "🔮 Mythical",
+          "id": "30",
+          "limit": 15,
+          "claimed_count": 4,
+          "video_url": "BAACAgUAAxkBAAIWOWncaSeqr7QLvxdXF0lXHOLZq4glAAKjHwACnVboVjk8KxKGMIJjOwQ"
+        },
+        {
+          "_id": "69e7d8954ed8ae6c8770eb2c",
+          "img_url": "AgACAgUAAyEFAATmgKO_AAIdPGnstWUQVYPFjkljJPalLXt9cjj5AAJvF2sbnzs5V0yuWjzSDIGZAQADAgADeQADOwQ",
+          "media_type": "photo",
+          "name": "Hanekawa Hasumi",
+          "anime": "Blue Archive",
+          "rarity": "🟡 Legendary",
+          "id": "47",
+          "limit": 74,
+          "claimed_count": 0
+        }
+      ],
+      "coins": 84630,
+      "xp": 3291,
+      "wins": 0,
+      "total_guesses": 26,
+      "favorites": [
+        "28",
+        "30",
+        "0037",
+        "0025",
+        "0028"
+      ],
+      "last_daily": 1777105996.8811486,
+      "waifu_stars": {
+        "0008": 1,
+        "0015": 1,
+        "0009": 1,
+        "0019": 1,
+        "0022": 3,
+        "0025": 3,
+        "0021": 1,
+        "0028": 3
+      },
+      "wanted_coins": 115600,
+      "black_material": 0,
+      "badges": [
+        "🌌 God Of Waifu"
+      ],
+      "daily_catch_count": 2,
+      "daily_catch_date": "2026-04-25",
+      "harem_mode": "default",
+      "harem_sort": "rarity"
+    },
+    {
+      "id": 7887025848,
+      "characters": [
+        {
+          "_id": "69da9fa854c0ef62e12ddf82",
+          "img_url": "AgACAgUAAxkBAAIUjmnan4IRxe0hS8YHC93LFfJKdHi6AALtDmsbM5HQVhvehqEajrEXAQADAgADeQADOwQ",
+          "name": "Megazord Arise",
+          "anime": "Solo Leveling",
+          "rarity": "🔮 Mythical",
+          "id": "20",
+          "limit": 8,
+          "claimed_count": 0
+        },
+        {
+          "_id": "69da70594ee5a7e423c52180",
+          "img_url": "AgACAgUAAxkBAAIUdWnabW-FOw4zrfrbe81sP5lNDu3zAAKrDmsbM5HQVkCDwDNFY6ZEAQADAgADeQADOwQ",
+          "name": "Fern",
+          "anime": "Frieren: Beyond",
+          "rarity": "🟡 Legendary",
+          "id": "19",
+          "limit": 35,
+          "claimed_count": 0
+        },
+        {
+          "_id": "69dbc3d51d38a827bc1a6319",
+          "img_url": "AgACAgUAAxkBAAIVW2nbwp6nEM49VIhbGbOzMp9vJohwAAJFD2sbnVbgVvP5nTH4fC-4AQADAgADeQADOwQ",
+          "media_type": "photo",
+          "name": "Columbina",
+          "anime": "Genshin Impact",
+          "rarity": "🟤 Medium",
+          "id": "26",
+          "limit": 45,
+          "claimed_count": 0
+        },
+        {
+          "_id": "69dbc6ad23c579c3cfcd2872",
+          "img_url": "AgACAgUAAxkBAAIVdmnbxTJTZiMG8bRa6AOYtSVNXO-VAAJMD2sbnVbgVswscQvo3llpAQADAgADeQADOwQ",
+          "media_type": "photo",
+          "name": "Shinobu Kochou [👘]",
+          "anime": "Demon Slayer",
+          "rarity": "🟣 Rare",
+          "id": "27",
+          "limit": 135,
+          "claimed_count": 0
+        },
+        {
+          "_id": "69e7d497d178679f734d655b",
+          "img_url": "AgACAgUAAyEGAATmgKO_AAIcYmnsemqq1XgfOm6o1bnKuUcpqTXzAAIiD2sbnVboVg_2P98d878AAQEAAwIAA3gAAzsE",
+          "media_type": "photo",
+          "name": "Rin Kanaoya",
+          "anime": "The Dangers In My Heart",
+          "rarity": "⚪ Common",
+          "id": "39",
+          "limit": 13,
+          "claimed_count": 0
+        }
+      ],
+      "coins": 450,
+      "favorites": [],
+      "first_name": "𝐍𝐞𝐨𝐎𝐫𝐢𝐧𝐗",
+      "total_guesses": 5,
+      "username": "NeoOrinX",
+      "wins": 1,
+      "xp": 607,
+      "last_daily": 1776016954.5781403,
+      "daily_catch_count": 1,
+      "daily_catch_date": "2026-04-25"
+    },
+    {
+      "id": 5906337078,
+      "characters": [
+        {
+          "_id": "69daa1d423b6711aeff8d29a",
+          "img_url": "AgACAgUAAxkBAAIUmmnaoY3vrqUfBjM2fbG0h49MH2CCAALvDmsbM5HQVnjNPv3mfKy3AQADAgADeQADOwQ",
+          "name": "Joe Togame",
+          "anime": "Wind Breaker",
+          "rarity": "⚪ Common",
+          "id": "21",
+          "limit": 75,
+          "claimed_count": 5,
+          "video_url": "BAACAgUAAxkBAAIUrGnaqPJZ89oAAUHa6rMMCDhfb-r4sQACMh8AAjOR0FbQKZoRO38mnTsE"
+        },
+        {
+          "_id": "69e7d497d178679f734d654a",
+          "img_url": "AgACAgUAAyEGAATmgKO_AAIcimnsfHqJdURvuludDhsAAeZp5c5wLgACqw5rGzOR0FZAg8AzRWOmRAEAAwIAA3kAAzsE",
+          "name": "Fern",
+          "anime": "Frieren: Beyond",
+          "rarity": "🟡 Legendary",
+          "id": "19",
+          "limit": 35,
+          "claimed_count": 5
+        }
+      ],
+      "coins": 0,
+      "daily_catch_count": 1,
+      "daily_catch_date": "2026-04-25",
+      "favorites": [
+        "21"
+      ],
+      "first_name": "︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎",
+      "total_guesses": 2,
+      "username": "skibidi_natsu",
+      "wins": 0,
+      "xp": 70
+    },
+    {
+      "id": 6485983470,
+      "characters": [],
+      "coins": 0,
+      "favorites": [],
+      "first_name": "𝖴᥊𝗂",
+      "total_guesses": 0,
+      "username": "Uxialucky_angel",
+      "wins": 0,
+      "xp": 0
+    },
+    {
+      "id": 8172920654,
+      "characters": [
+        {
+          "_id": "69da9fa854c0ef62e12ddf82",
+          "img_url": "AgACAgUAAxkBAAIUjmnan4IRxe0hS8YHC93LFfJKdHi6AALtDmsbM5HQVhvehqEajrEXAQADAgADeQADOwQ",
+          "name": "Megazord Arise",
+          "anime": "Solo Leveling",
+          "rarity": "🔮 Mythical",
+          "id": "20",
+          "limit": 8,
+          "claimed_count": 1
+        },
+        {
+          "_id": "69da70594ee5a7e423c52180",
+          "img_url": "AgACAgUAAxkBAAIUdWnabW-FOw4zrfrbe81sP5lNDu3zAAKrDmsbM5HQVkCDwDNFY6ZEAQADAgADeQADOwQ",
+          "name": "Fern",
+          "anime": "Frieren: Beyond",
+          "rarity": "🟡 Legendary",
+          "id": "19",
+          "limit": 35,
+          "claimed_count": 2
+        }
+      ],
+      "coins": 0,
+      "favorites": [],
+      "first_name": "ᴅᴀᴠɪᴅ × ᴋᴜʀᴏᴋᴏ",
+      "total_guesses": 2,
+      "username": "Kuro_3x",
+      "wins": 0,
+      "xp": 175
+    }
+  ],
+  "chat_settings": [
+    {
+      "chat_id": -1003867190207,
+      "drop_interval_minutes": 3,
+      "drop_msg_count": 50
+    },
+    {
+      "chat_id": 6762363593,
+      "message_frequency": 50
+    },
+    {
+      "chat_id": -1003978433007,
+      "drop_interval_minutes": 3,
+      "drop_msg_count": 50
+    },
+    {
+      "chat_id": -1003944640353,
+      "drop_msg_count": 50
+    }
+  ],
+  "group_user_totals": [
+    {
+      "group_id": -1003978433007,
+      "user_id": 6762363593,
+      "count": 12,
+      "first_name": "Osamu",
+      "username": "kirito22112"
+    },
+    {
+      "user_id": 6485983470,
+      "group_id": -1003867190207,
+      "count": 1,
+      "first_name": "𝖴᥊𝗂",
+      "username": "Uxialucky_angel"
+    },
+    {
+      "group_id": -1003867190207,
+      "user_id": 5906337078,
+      "count": 2,
+      "first_name": "︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎ ︎",
+      "username": "skibidi_natsu"
+    },
+    {
+      "user_id": 7887025848,
+      "group_id": -1003867190207,
+      "count": 10,
+      "first_name": "𝐍𝐞𝐨𝐎𝐫𝐢𝐧𝐗",
+      "username": "NeoOrinX"
+    },
+    {
+      "group_id": -1003867190207,
+      "user_id": 8172920654,
+      "count": 2,
+      "first_name": "ᴅᴀᴠɪᴅ × ᴋᴜʀᴏᴋᴏ",
+      "username": "Kuro_3x"
+    },
+    {
+      "group_id": -1003867190207,
+      "user_id": 6762363593,
+      "count": 38,
+      "first_name": "Osamu",
+      "username": "kirito22112"
+    },
+    {
+      "group_id": -1003944640353,
+      "user_id": 6762363593,
+      "count": 2,
+      "first_name": "Osamu",
+      "username": "kirito22112"
+    }
+  ],
+  "top_groups": [
+    {
+      "group_id": -1003867190207,
+      "count": 53,
+      "group_name": "All Bot Test"
+    },
+    {
+      "group_id": -1003978433007,
+      "count": 12,
+      "group_name": "Backup all"
+    },
+    {
+      "group_id": -1003944640353,
+      "count": 2,
+      "group_name": "Waifus Character [Group]"
+    }
+  ],
+  "pm_users": [
+    {
+      "first_name": "𝐍𝐞𝐨𝐎𝐫𝐢𝐧𝐗",
+      "username": "NeoOrinX"
+    },
+    {
+      "first_name": "Osamu",
+      "username": "kirito22112"
+    },
+    {
+      "first_name": "Osamu",
+      "username": "kirito22112"
+    },
+    {
+      "first_name": "𝘖𝘴𝘢𝘮𝘶",
+      "username": "Osamu1123"
+    },
+    {
+      "first_name": "𝖴᥊𝗂",
+      "username": "Uxialucky_angel"
+    },
+    {
+      "first_name": "𝐆𝐨𝐝𝐍𝐞𝐨𝐒𝐮𝐤𝐞",
+      "username": "Suke_Still_Love_H"
+    },
+    {
+      "first_name": "Osamu",
+      "username": "kirito22112"
+    },
+    {
+      "first_name": "Limitless Lictyazz.",
+      "username": "wastedDpotential"
+    }
+  ]
+}

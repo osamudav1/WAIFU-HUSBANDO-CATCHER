@@ -338,7 +338,7 @@ application.add_handler(CommandHandler("restore", restore_cmd, block=False))
 application.add_handler(CallbackQueryHandler(backup_menu_callback, pattern=r"^backup:(do|restore_prompt)$",   block=False))
 application.add_handler(CallbackQueryHandler(restore_callback,     pattern=r"^restore:(confirm|cancel)$",    block=False))
 application.add_handler(MessageHandler(
-    filters.Document.ALL & filters.ChatType.PRIVATE,
+    filters.Document.FileExtension("json") & filters.ChatType.PRIVATE,
     _auto_restore_detect,
     block=False,
 ))
