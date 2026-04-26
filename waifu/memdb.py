@@ -167,6 +167,10 @@ class InsertOneResult:
     def __init__(self, inserted_id):
         self.inserted_id = inserted_id
 
+class InsertManyResult:
+    def __init__(self, inserted_ids):
+        self.inserted_ids = inserted_ids
+
 class UpdateResult:
     def __init__(self, matched_count=0, modified_count=0, upserted_id=None):
         self.matched_count  = matched_count
@@ -432,6 +436,16 @@ class MemCollection:
         self._store[str(doc["_id"])] = doc
         return InsertOneResult(doc["_id"])
 
+    async def insert_many(self, documents: list) -> "InsertManyResult":
+        ids = []
+        for document in documents:
+            doc = copy.deepcopy(document)
+            if "_id" not in doc:
+                doc["_id"] = _new_id()
+            self._store[str(doc["_id"])] = doc
+            ids.append(doc["_id"])
+        return InsertManyResult(ids)
+
     async def update_one(self, filt: dict, update: dict,
                          upsert: bool = False) -> UpdateResult:
         for key, doc in self._store.items():
@@ -609,6 +623,17 @@ class FallbackCollection:
             if _is_quota_err(exc):
                 self._warn_switch(exc)
                 return await self._mem.insert_one(document)
+            raise
+
+    async def insert_many(self, documents):
+        if self._fallback:
+            return await self._mem.insert_many(documents)
+        try:
+            return await self._db.insert_many(documents)
+        except Exception as exc:
+            if _is_quota_err(exc):
+                self._warn_switch(exc)
+                return await self._mem.insert_many(documents)
             raise
 
     async def update_one(self, filt, update, upsert=False):
