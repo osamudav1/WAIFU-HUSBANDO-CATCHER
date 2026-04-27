@@ -45,7 +45,11 @@ def _serialize(obj):
 async def _dump_collection(col) -> list:
     docs = []
     async for doc in col.find({}):
-        doc.pop("_id", None)
+        _id = doc.get("_id")
+        # Drop auto-generated MongoDB ObjectIds (meaningless for restore).
+        # Keep integer _id values (e.g. Telegram user IDs stored as _id in pm_users).
+        if isinstance(_id, ObjectId):
+            doc.pop("_id", None)
         docs.append(doc)
     return docs
 

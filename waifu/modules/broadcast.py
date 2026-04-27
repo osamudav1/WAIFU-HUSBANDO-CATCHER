@@ -71,8 +71,17 @@ async def broadcast(update: Update, context: CallbackContext) -> None:
     g2 = set(await group_user_totals_collection.distinct("group_id"))
     all_groups = list(g1 | g2)
     all_pms    = await pm_users.distinct("_id")
-    targets    = list(set(all_groups + list(all_pms)))
-    total      = len(targets)
+
+    # Cast everything to int; skip MongoDB ObjectIds or other non-integer values
+    raw = set(all_groups + list(all_pms))
+    targets: list[int] = []
+    for v in raw:
+        try:
+            targets.append(int(v))
+        except (TypeError, ValueError):
+            pass
+
+    total = len(targets)
 
     if total == 0:
         await update.message.reply_text("⚠️ Known groups/PMs မရှိသေး — restore backup ဦး")
